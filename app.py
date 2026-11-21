@@ -154,6 +154,9 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl):
     urit_urlap()
     st.rerun()
 
-st.sidebar.title("⚡ Energia Portál")
-users_data = supabase.table("energetikusok").select("id, nev, szerepkor").eq("aktiv", True).order("nev").execute().data or list()
-users_map = {u["nev"]: u for u in users_data}
+def mutat_kimutatasok():
+    st.header("Rögzített számlák és kimutatások")
+    lista = supabase.table("szamlak").select("*").order("jovahagyas_ideje", desc=True).execute().data or list()
+    if not lista:
+        st.info("Még nincs mentett számla.")
+        return
