@@ -23,27 +23,21 @@ def feldolgoz_pdf(fajl):
     szoveg = "\n".join(oldalak)
     adat = {"szoveg": szoveg.strip(), "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0.0, "pod": ""}
     m = re.search(r"Számla\s*sorszáma[:\s]+([A-Za-z0-9/-]{6,})", szoveg, re.I)
-    if m:
-        adat["szamlaszam"] = m.group(1).strip()
+    if m: adat["szamlaszam"] = m.group(1).strip()
     mf = re.search(r"(\d{8,})", fajl.name)
-    if not adat["szamlaszam"] and mf:
-        adat["szamlaszam"] = mf.group(1)
+    if not adat["szamlaszam"] and mf: adat["szamlaszam"] = mf.group(1)
     mk = re.search(r"Számla\s*kelte[:\s]+(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
-    if mk:
-        adat["kelte"] = datetime.strptime(mk.group(1), "%Y.%m.%d").date()
+    if mk: adat["kelte"] = datetime.strptime(mk.group(1), "%Y.%m.%d").date()
     mh = re.search(r"Fizetési\s*határidő[:\s]+(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
-    if mh:
-        adat["hatarido"] = datetime.strptime(mh.group(1), "%Y.%m.%d").date()
+    if mh: adat["hatarido"] = datetime.strptime(mh.group(1), "%Y.%m.%d").date()
     mi = re.search(r"Elszámolt\s*időszak[:\s]+(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
     if mi:
         adat["tol"] = datetime.strptime(mi.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(mi.group(2), "%Y.%m.%d").date()
     mb = re.search(r"(?:Fizetendő\s*összeg|Számla\s*végösszege)[:\s]+([\d\.\s]+)\s*Ft", szoveg, re.I)
-    if mb:
-        adat["brutto"] = float(mb.group(1).replace(".", "").replace(" ", "").replace(",", "."))
+    if mb: adat["brutto"] = float(mb.group(1).replace(".", "").replace(" ", "").replace(",", "."))
     mp = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", szoveg)
-    if mp:
-        adat["pod"] = mp.group(1).strip()
+    if mp: adat["pod"] = mp.group(1).strip()
     return adat
 
 def get_helyek(uid):
@@ -115,10 +109,8 @@ pdf_adat = None
 if fajl and fajl.name.lower().endswith(".pdf"):
     fajl.seek(0)
     pdf_adat = feldolgoz_pdf(fajl)
-    if not pdf_adat["szoveg"]:
-        st.warning("Szkennelt PDF: a tételeket lent kézzel írd be, a PDF fájlt ugyanúgy elmenti a rendszer.")
-    if pdf_adat["szamlaszam"]:
-        st.success(f"PDF feldolgozva! Számlaszám: **{pdf_adat['szamlaszam']}**")
+    if not pdf_adat["szoveg"]: st.warning("Szkennelt PDF: a tételeket lent kézzel írd be, a PDF fájlt ugyanúgy elmenti a rendszer.")
+    if pdf_adat["szamlaszam"]: st.success(f"PDF feldolgozva! Számlaszám: **{pdf_adat['szamlaszam']}**")
 
 hely_opciok = {f"{h['nev']} ({h['pod']}) [{h['jog']}]": int(h["id"]) for h in helyek}
 alap_idx = 0
@@ -150,10 +142,8 @@ alap_df = pd.DataFrame({
     "Nettó egységár": list((0.0, 0.0, 0.0, 0.0)),
     "ÁFA (%)": list((27.0, 27.0, 27.0, 27.0))
 })
-if fajl and fajl.name.lower().endswith(".xlsx"):
-    alap_df = pd.read_excel(fajl)
-if fajl and fajl.name.lower().endswith(".csv"):
-    alap_df = pd.read_csv(fajl)
+if fajl and fajl.name.lower().endswith(".xlsx"): alap_df = pd.read_excel(fajl)
+if fajl and fajl.name.lower().endswith(".csv"): alap_df = pd.read_csv(fajl)
 
 szerk_df = st.data_editor(alap_df, num_rows="dynamic", use_container_width=True)
 
@@ -164,12 +154,10 @@ tetelek = list()
 for _, row in szerk_df.iterrows():
     m_val = row.get("Mennyiség")
     a_val = row.get("Nettó egységár")
-    if m_val is None or a_val is None or pd.isna(m_val) or pd.isna(a_val):
-        continue
+    if m_val is None or a_val is None or pd.isna(m_val) or pd.isna(a_val): continue
     menny = Decimal(str(m_val))
     ar = Decimal(str(a_val))
-    if menny == 0 and ar == 0:
-        continue
+    if menny == 0 and ar == 0: continue
     afa_val = row.get("ÁFA (%)")
     afa = Decimal(str(afa_val)) if (afa_val is not None and not pd.isna(afa_val)) else Decimal("27.0")
     netto = (menny * ar).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
@@ -187,6 +175,6 @@ m2.metric("Számított Bruttó", f"{ossz_brutto:,.0f} Ft")
 m3.metric("Eltérés a számlától", f"{elteres:,.2f} Ft")
 
 egyezik = (elteres <= Decimal("2.00")) and (len(tetelek) > 0) and (szamlan_brutto > 0)
-if egyezik:
-    st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
-else:
+if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
+if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha a számított bruttó összeg egyezik a számla összegével.")
+
