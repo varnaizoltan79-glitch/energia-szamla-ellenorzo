@@ -34,68 +34,55 @@ def szam_tisztit(szoveg):
         tiszta = tiszta.replace(",", ".")
     elif tiszta.count(".") > 1:
         tiszta = tiszta.replace(".", "")
-    try:
-        return float(tiszta)
-    except ValueError:
-        return 0.0
+    return float(tiszta) if re.match(r"^-?\d+(\.\d+)?$", tiszta) else 0.0
 
 def feldolgoz_xml(fajl):
     adat = {"szoveg": "XML", "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0.0, "pod": "", "tetelek": list()}
-    try:
-        tree = ET.parse(fajl)
-        root = tree.getroot()
-        for elem in root.iter():
-            tag = elem.tag.split("}")[-1].lower()
-            val = (elem.text or "").strip()
-            if not val:
-                continue
-            if tag in ("invoicenumber", "szamlaszam") and not adat["szamlaszam"]:
-                adat["szamlaszam"] = val
-            elif tag in ("invoiceissuedate", "szamlakelte"):
-                try: adat["kelte"] = datetime.strptime(val[:10], "%Y-%m-%d").date()
-                except ValueError: pass
-            elif tag in ("paymentdate", "fizetesihatarido"):
-                try: adat["hatarido"] = datetime.strptime(val[:10], "%Y-%m-%d").date()
-                except ValueError: pass
-            elif tag in ("invoicedeliveryperiodstart", "idoszaktol"):
-                try: adat["tol"] = datetime.strptime(val[:10], "%Y-%m-%d").date()
-                except ValueError: pass
-            elif tag in ("invoicedeliveryperiodend", "idoszakig"):
-                try: adat["ig"] = datetime.strptime(val[:10], "%Y-%m-%d").date()
-                except ValueError: pass
-            elif tag in ("invoicegrossamount", "bruttoosszeg") and adat["brutto"] == 0.0:
-                adat["brutto"] = szam_tisztit(val)
-            elif "HU" in val and len(val) >= 16 and not adat["pod"]:
-                m_pod = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", val)
-                if m_pod: adat["pod"] = m_pod.group(1)
+    tree = ET.parse(fajl)
+    root = tree.getroot()
+    for elem in root.iter():
+        tag = elem.tag.split("}")[-1].lower()
+        val = (elem.text or "").strip()
+        if not val:
+            continue
+        if tag in ("invoicenumber", "szamlaszam") and not adat["szamlaszam"]:
+            adat["szamlaszam"] = val
+        elif tag in ("invoiceissuedate", "szamlakelte") and len(val) >= 10:
+            adat["kelte"] = datetime.strptime(val[:10], "%Y-%m-%d").date()
+        elif tag in ("paymentdate", "fizetesihatarido") and len(val) >= 10:
+            adat["hatarido"] = datetime.strptime(val[:10], "%Y-%m-%d").date()
+        elif tag in ("invoicedeliveryperiodstart", "idoszaktol") and len(val) >= 10:
+            adat["tol"] = datetime.strptime(val[:10], "%Y-%m-%d").date()
+        elif tag in ("invoicedeliveryperiodend", "idoszakig") and len(val) >= 10:
+            adat["ig"] = datetime.strptime(val[:10], "%Y-%m-%d").date()
+        elif tag in ("invoicegrossamount", "bruttoosszeg") and adat["brutto"] == 0.0:
+            adat["brutto"] = szam_tisztit(val)
+        elif "HU" in val and len(val) >= 16 and not adat["pod"]:
+            m_pod = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", val)
+            if m_pod: adat["pod"] = m_pod.group(1)
 
-        for elem in root.iter():
-            tag = elem.tag.split("}")[-1].lower()
-            if tag in ("line", "tetel"):
-                megn, me = "Díjtétel", "kWh"
-                menny, ar, afa, br = 0.0, 0.0, 27.0, 0.0
-                for child in elem.iter():
-                    ctag = child.tag.split("}")[-1].lower()
-                    cval = (child.text or "").strip()
-                    if not cval: continue
-                    if ctag in ("linedescription", "megnevezes"): megn = cval
-                    elif ctag in ("quantity", "mennyiseg"): menny = szam_tisztit(cval)
-                    elif ctag in ("unitofmeasure", "mertekegyseg"): me = cval
-                    elif ctag in ("unitprice", "egysegar"): ar = szam_tisztit(cval)
-                    elif ctag in ("vatpercentage", "afakulcs"): afa = szam_tisztit(cval) * (100 if szam_tisztit(cval) < 1 else 1)
-                    elif ctag in ("linegrossamount", "tetelbrutto"): br = szam_tisztit(cval)
-                if menny > 0 or br > 0:
-                    adat["tetelek"].append({"Állapot": "", "Megnevezés": megn, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa, "Számlán bruttó (Ft)": br})
-    except Exception:
-        pass
+    for elem in root.iter():
+        tag = elem.tag.split("}")[-1].lower()
+        if tag in ("line", "tetel"):
+            megn, me = "Díjtétel", "kWh"
+            menny, ar, afa, br = 0.0, 0.0, 27.0, 0.0
+            for child in elem.iter():
+                ctag = child.tag.split("}")[-1].lower()
+                cval = (child.text or "").strip()
+                if not cval: continue
+                if ctag in ("linedescription", "megnevezes"): megn = cval
+                elif ctag in ("quantity", "mennyiseg"): menny = szam_tisztit(cval)
+                elif ctag in ("unitofmeasure", "mertekegyseg"): me = cval
+                elif ctag in ("unitprice", "egysegar"): ar = szam_tisztit(cval)
+                elif ctag in ("vatpercentage", "afakulcs"): afa = szam_tisztit(cval) * (100 if szam_tisztit(cval) < 1 else 1)
+                elif ctag in ("linegrossamount", "tetelbrutto"): br = szam_tisztit(cval)
+            if menny > 0 or br > 0:
+                adat["tetelek"].append({"Állapot": "", "Megnevezés": megn, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa, "Számlán bruttó (Ft)": br})
     return adat
 
 def feldolgoz_pdf(fajl):
     reader = PdfReader(fajl)
-    oldalak = list()
-    for p in reader.pages:
-        try: oldalak.append(p.extract_text(extraction_mode="layout") or "")
-        except Exception: oldalak.append(p.extract_text() or "")
+    oldalak = list(p.extract_text() or "" for p in reader.pages)
     szoveg = "\n".join(oldalak)
     adat = {"szoveg": szoveg.strip(), "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0.0, "pod": "", "tetelek": list()}
 
@@ -120,7 +107,6 @@ def feldolgoz_pdf(fajl):
     mp = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", szoveg)
     if mp: adat["pod"] = mp.group(1).strip()
 
-    # Digitális PDF táblázatsorok felismerése (mennyiség, egység, egységár, nettó, áfa%, bruttó)
     sor_minta = re.compile(r"([A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű\"'\(\)\-\s]{4,}?)\s+(?:\d{4}\.\d{2}\.\d{2}\s*[-–]\s*\d{4}\.\d{2}\.\d{2}\s+)?([\d\s\.,]+)\s+(kWh|hó|m3|MJ|db|kW)\s+([\d\s\.,]+)\s*(?:Ft/\w+)?\s+([\d\s\.,]+)\s+(\d{1,2})%?\s+([\d\s\.,]+)")
     for sor in szoveg.splitlines():
         tal = sor_minta.search(sor)
@@ -196,19 +182,15 @@ def szamol_tetelek(df):
     return ossz_netto, ossz_brutto, tetelek, van_tetel_hiba, statuszok
 
 def mentes_adatbazisba(uj_szamla, tetelek, fajl):
-    try:
-        res = supabase.table("szamlak").insert(uj_szamla).execute()
-        sid = next(iter(res.data))["id"]
-        for t in tetelek:
-            t["szamla_id"] = sid
-        supabase.table("szamla_tetelek").insert(tetelek).execute()
-        if fajl is not None and fajl.name.lower().endswith(".pdf"):
-            fajl.seek(0)
-            fnev = f"{date.today().year}_{uj_szamla['szamlaszam'].replace('/', '_')}.pdf"
-            supabase.storage.from_("szamlak-pdf").upload(path=fnev, file=fajl.read(), file_options={"content-type": "application/pdf", "upsert": "true"})
-            supabase.table("szamlak").update({"pdf_utvonal": fnev}).eq("id", sid).execute()
-        st.session_state["utolso_mentes"] = f"✅ Sikeresen megtörtént a számla rögzítése! (Számlaszám: {uj_szamla['szamlaszam']}, ID: #{sid})"
-        urit_urlap()
-        st.rerun()
-    except Exception as hiba:
-        st.error(f"Pontos hiba oka: {hiba}")
+    letezo = supabase.table("szamlak").select("id").eq("szolgaltato_id", uj_szamla["szolgaltato_id"]).eq("szamlaszam", uj_szamla["szamlaszam"]).execute().data
+    if letezo:
+        st.warning(f"⚠️ Ez a számlaszám ({uj_szamla['szamlaszam']}) már rögzítve van ennél a szolgáltatónál!")
+        return
+    res = supabase.table("szamlak").insert(uj_szamla).execute()
+    sid = next(iter(res.data))["id"]
+    for t in tetelek:
+        t["szamla_id"] = sid
+    supabase.table("szamla_tetelek").insert(tetelek).execute()
+    if fajl is not None and fajl.name.lower().endswith(".pdf"):
+        fajl.seek(0)
+        fnev = f"{date.today().year}_{uj_szamla['szamlaszam'].replace('/', '_')}.pdf"
