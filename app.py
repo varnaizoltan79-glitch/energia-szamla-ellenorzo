@@ -3,8 +3,8 @@ import xml.etree.ElementTree as ET
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 import pandas as pd
+import pdfplumber
 import streamlit as st
-from pypdf import PdfReader
 from supabase import create_client
 
 st.set_page_config(page_title="Energiaszámla Ellenőrző", page_icon="⚡", layout="wide")
@@ -68,15 +68,40 @@ def feldolgoz_xml(fajl):
     return adat
 
 def feldolgoz_pdf(fajl):
-    reader = PdfReader(fajl)
-    szoveg = "\n".join(list(p.extract_text() or "" for p in reader.pages))
-    adat = {"szoveg": szoveg.strip(), "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0.0, "pod": "", "tetelek": list()}
-    m = re.search(r"(?:Számla\s*sorszáma|Számlaszám|Bizonylat\s*sorszáma)[:\s]+([A-Za-z0-9/-]{5,})", szoveg, re.I)
+    szoveg_lista = list()
+    tetelek = list()
+    with pdfplumber.open(fajl) as pdf:
+        for page in pdf.pages:
+            szoveg_lista.append(page.extract_text() or "")
+            for tabla in (page.extract_tables() or list()):
+                for sor in tabla:
+                    if not sor or len(sor) < 7: continue
+                    cella_szoveg = " ".join(str(c or "") for c in sor)
+                    if not any(u in cella_szoveg for u in ("kWh", "hó", "m3", "MJ")): continue
+                    nevek = str(sor[0] or "").splitlines()
+                    mennyek = str(sor[2] or "").splitlines()
+                    mek = str(sor[3] or "").splitlines()
+                    arak = str(sor[4] or "").splitlines()
+                    afak = str(sor[6] or "").splitlines()
+                    bruttok = str(sor[7] if len(sor) > 7 else sor[-1] or "").splitlines()
+                    for i in range(len(nevek)):
+                        megn = nevek[i].strip()
+                        if not megn or "összesen" in megn.lower(): continue
+                        menny = szam_tisztit(mennyek[i] if i < len(mennyek) else mennyek[-1])
+                        me = (mek[i] if i < len(mek) else mek[-1]).strip()
+                        ar = szam_tisztit(arak[i] if i < len(arak) else arak[-1])
+                        afa = szam_tisztit(afak[i] if i < len(afak) else afak[-1]) or 27.0
+                        br = szam_tisztit(bruttok[i] if i < len(bruttok) else bruttok[-1])
+                        if menny > 0 and ar > 0:
+                            tetelek.append({"Megnevezés": megn, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa, "Számlán bruttó (Ft)": br})
+
+    szoveg = "\n".join(szoveg_lista)
+    adat = {"szoveg": szoveg.strip(), "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0.0, "pod": "", "tetelek": tetelek}
+    m = re.search(r"(?:Számla\s*sorszáma|Számlaszám)[:\s]+([A-Za-z0-9/-]{5,})", szoveg, re.I)
     if m: adat["szamlaszam"] = m.group(1).strip()
     alap_nev = next(iter(fajl.name.rsplit(".", 1)))
     mf = re.search(r"(\d{6,})", alap_nev)
     if not adat["szamlaszam"] and mf: adat["szamlaszam"] = mf.group(1)
-    if not adat["szamlaszam"] and len(alap_nev) >= 5: adat["szamlaszam"] = alap_nev
     mk = re.search(r"Számla\s*kelte[:\s]+(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
     if mk: adat["kelte"] = datetime.strptime(mk.group(1), "%Y.%m.%d").date()
     mh = re.search(r"Fizetési\s*határidő[:\s]+(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
@@ -85,19 +110,10 @@ def feldolgoz_pdf(fajl):
     if mi:
         adat["tol"] = datetime.strptime(mi.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(mi.group(2), "%Y.%m.%d").date()
-    mb = re.search(r"(?:Fizetendő\s*összeg|Számla\s*végösszege|Bruttó\s*összesen)[:\s]+([\d\.\s,]+)\s*Ft", szoveg, re.I)
+    mb = re.search(r"(?:Fizetendő\s*összeg|Bruttó\s*számlaérték\s*összesen\*{0,2})[:\s]+([\d\.\s,]+)\s*(?:Ft)?", szoveg, re.I)
     if mb: adat["brutto"] = szam_tisztit(mb.group(1))
     mp = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", szoveg)
     if mp: adat["pod"] = mp.group(1).strip()
-    sor_minta = re.compile(r"([A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű\"'\(\)\-\s]{4,}?)\s+(?:\d{4}\.\d{2}\.\d{2}\s*[-–]\s*\d{4}\.\d{2}\.\d{2}\s+)?([\d\s\.,]+)\s+(kWh|hó|m3|MJ|db|kW)\s+([\d\s\.,]+)\s*(?:Ft/\w+)?\s+([\d\s\.,]+)\s+(\d{1,2})%?\s+([\d\s\.,]+)")
-    for sor in szoveg.splitlines():
-        tal = sor_minta.search(sor)
-        if tal:
-            megn = re.sub(r"\s+", " ", tal.group(1)).strip()
-            if "összesen" in megn.lower() or len(megn) < 4: continue
-            menny, ar = szam_tisztit(tal.group(2)), szam_tisztit(tal.group(4))
-            if menny > 0 and ar > 0:
-                adat["tetelek"].append({"Megnevezés": megn, "Mennyiség": menny, "Mértékegység": tal.group(3).strip(), "Nettó egységár": ar, "ÁFA (%)": szam_tisztit(tal.group(6)), "Számlán bruttó (Ft)": szam_tisztit(tal.group(7))})
     return adat
 
 def get_helyek(uid):
