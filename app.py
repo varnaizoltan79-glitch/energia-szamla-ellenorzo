@@ -150,17 +150,17 @@ st.sidebar.title("⚡ Energia Portál")
 
 try:
     users_data = supabase.table("energetikusok").select("id, nev, szerepkor").eq("aktiv", True).order("nev").execute().data or []
-    users_df = pd.DataFrame(users_data)
 except Exception as e:
     st.error(f"Adatbázis olvasási hiba: {e}")
     st.stop()
 
-if users_df.empty:
+if not users_data:
     st.warning("Nincs aktív energetikus az adatbázisban!")
     st.stop()
 
-kivalasztott_nev = st.sidebar.selectbox("Belépett energetikus:", users_df["nev"])
-user_sor = users_df[users_df["nev"] == kivalasztott_nev].iloc
+users_map = {u["nev"]: u for u in users_data}
+kivalasztott_nev = st.sidebar.selectbox("Belépett energetikus:", list(users_map.keys()))
+user_sor = users_map[kivalasztott_nev]
 user_id = int(user_sor["id"])
 st.sidebar.info(f"Szerepkör: **{user_sor['szerepkor']}**")
 
@@ -181,10 +181,7 @@ if menu == "🧾 Számla ellenőrzés és feltöltés":
         if not pdf_adat["nyers_szoveg"]:
             st.warning("⚠️ Ez a PDF szkennelt képként készült, ezért az adatokat lent kézzel kell beírni, de a PDF fájlt ugyanúgy elmenti a rendszer!")
         elif pdf_adat["szamlaszam"] or pdf_adat["brutto"] > 0:
-            st.success(f"✅ PDF feldolgozva! Talált számlaszám: **{pdf_adat['szamlaszam']}**, Bruttó: **{pdf_adat['brutto']:,.0f} Ft**, Tételek: **{len(pdf_adat['tetelek'])} db**")
-        
-        with st.expander("🔍 Kiolvasott PDF szöveg megtekintése (ellenőrzéshez)"):
-            st.text(pdf_adat["nyers_szoveg"][:3000] if pdf_adat["nyers_szoveg"] else "Üres (képalapú szkennelt PDF)")
+            st.success(f"✅ PDF feldolgozva! Számlaszám: **{pdf_adat['szamlaszam']}**, Bruttó: **{pdf_adat['brutto']:,.0f} Ft**")
 
     hely_opciok = {f"{r['megnevezes']} ({r['pod_eic_azonosito']}) [{r['jogosultsag']}]": int(r["id"]) for _, r in helyek_df.iterrows()}
     alap_index = 0
@@ -213,16 +210,15 @@ if menu == "🧾 Számla ellenőrzés és feltöltés":
         idoszak_tol = st.date_input("Időszak kezdete", value=pdf_adat["idoszak_tol"] if pdf_adat else date.today())
         idoszak_ig = st.date_input("Időszak vége", value=pdf_adat["idoszak_ig"] if pdf_adat else date.today())
 
-    st.subheader("3. Díjtételek ellenőrzése")
-    
-    beolvasott_sorok = []
+    st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
     if pdf_adat and len(pdf_adat["tetelek"]) > 0:
-        beolvasott_sorok = pdf_adat["tetelek"]
+        alap_tetelek = pd.DataFrame(pdf_adat["tetelek"])
     elif feltoltott_fajl and feltoltott_fajl.name.lower().endswith(".xlsx"):
-        feltoltott_fajl.seek(0)
-        beolvasott_sorok = pd.read_excel(feltoltott_fajl).to_dict(orient="records")
+        alap_tetelek = pd.read_excel(feltoltott_fajl)
     elif feltoltott_fajl and feltoltott_fajl.name.lower().endswith(".csv"):
-        feltoltott_fajl.seek(0)
-        beolvasott_sorok = pd.read_csv(feltoltott_fajl).to_dict(orient="records")
-
-    alap_darab = len(beolvasott_sorok) if len(beolvasott_sorok) > 0 else 4
+        alap_tetelek = pd.read_csv(feltoltott_fajl)
+    else:
+        alap_tetelek = pd.DataFrame([
+            {"Megnevezés": "Energiadíj", "Mennyiség": 0.0, "Mértékegység": "kWh", "Nettó egységár": 0.0, "ÁFA (%)": 27.0},
+            {"Megnevezés": "Rendszerhasználati díj", "Mennyiség": 0.0, "Mértékegység": "kWh", "Nettó egységár": 0.0, "ÁFA (%)": 27.0},
+            {"Megnevezés": "Elosztói díj", "Mennyiség": 0.0, "Mértékegység": "kWh", "Nettó egységár": 0.0, "ÁFA (%)": 27.0},
