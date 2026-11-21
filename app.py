@@ -28,10 +28,12 @@ def feldolgoz_pdf(fajl):
     oldalak = list(p.extract_text() or "" for p in reader.pages)
     szoveg = "\n".join(oldalak)
     adat = {"szoveg": szoveg.strip(), "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0.0, "pod": ""}
-    m = re.search(r"Számla\s*sorszáma[:\s]+([A-Za-z0-9/-]{6,})", szoveg, re.I)
+    m = re.search(r"(?:Számla\s*sorszáma|Számlaszám|Bizonylat\s*sorszáma)[:\s]+([A-Za-z0-9/-]{5,})", szoveg, re.I)
     if m: adat["szamlaszam"] = m.group(1).strip()
-    mf = re.search(r"(\d{8,})", fajl.name)
+    alap_nev = fajl.name.rsplit(".", 1)[0]
+    mf = re.search(r"(\d{6,})", alap_nev)
     if not adat["szamlaszam"] and mf: adat["szamlaszam"] = mf.group(1)
+    if not adat["szamlaszam"] and len(alap_nev) >= 5: adat["szamlaszam"] = alap_nev
     mk = re.search(r"Számla\s*kelte[:\s]+(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
     if mk: adat["kelte"] = datetime.strptime(mk.group(1), "%Y.%m.%d").date()
     mh = re.search(r"Fizetési\s*határidő[:\s]+(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
@@ -106,7 +108,7 @@ if menu == "📊 Kimutatások és Riportok":
     st.stop()
 
 fv = st.session_state["form_ver"]
-col_fej, col_gomb = st.columns([4, 1])
+col_fej, col_gomb = st.columns((4, 1))
 col_fej.header("Energiaszámla ellenőrzése és rögzítése")
 if col_gomb.button("🗑️ Új számla / Ürítés"):
     urit_urlap()
@@ -121,6 +123,7 @@ if not helyek:
     st.stop()
 
 fajl = st.file_uploader("1. Húzd ide a számlát (PDF vagy Excel/CSV) – opcionális", type=list(("pdf", "xlsx", "csv")), key=f"fajl_{fv}")
+f_id = f"{fv}_{fajl.name}" if fajl else f"{fv}_ures"
 pdf_adat = None
 if fajl and fajl.name.lower().endswith(".pdf"):
     fajl.seek(0)
@@ -135,20 +138,20 @@ if pdf_adat and pdf_adat["pod"]:
 
 st.subheader("2. Számla alapadatok")
 c1, c2, c3 = st.columns(3)
-v_hely = c1.selectbox("Felhasználási hely", list(hely_opciok.keys()), index=alap_idx, key=f"hely_{fv}")
+v_hely = c1.selectbox("Felhasználási hely", list(hely_opciok.keys()), index=alap_idx, key=f"hely_{f_id}")
 hely_id = hely_opciok[v_hely]
-szamlaszam = c1.text_input("Számlaszám", value=pdf_adat["szamlaszam"] if pdf_adat else "", key=f"szsz_{fv}")
+szamlaszam = c1.text_input("Számlaszám", value=pdf_adat["szamlaszam"] if pdf_adat else "", key=f"szsz_{f_id}")
 
 szolg_data = supabase.table("szolgaltatok").select("id, nev").order("nev").execute().data or list()
 szolg_opciok = {s["nev"]: int(s["id"]) for s in szolg_data}
-v_szolg = c2.selectbox("Szolgáltató", list(szolg_opciok.keys()), key=f"szolg_{fv}")
+v_szolg = c2.selectbox("Szolgáltató", list(szolg_opciok.keys()), key=f"szolg_{f_id}")
 szolg_id = szolg_opciok[v_szolg]
-szamlan_brutto = c2.number_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=pdf_adat["brutto"] if pdf_adat else 0.0, step=1.0, format="%.2f", key=f"br_{fv}")
+szamlan_brutto = c2.number_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=pdf_adat["brutto"] if pdf_adat else 0.0, step=1.0, format="%.2f", key=f"br_{f_id}")
 
-kelte = c3.date_input("Számla kelte", value=pdf_adat["kelte"] if pdf_adat else date.today(), key=f"k_{fv}")
-hatarido = c3.date_input("Fizetési határidő", value=pdf_adat["hatarido"] if pdf_adat else date.today(), key=f"h_{fv}")
-tol = c3.date_input("Időszak kezdete", value=pdf_adat["tol"] if pdf_adat else date.today(), key=f"t_{fv}")
-ig = c3.date_input("Időszak vége", value=pdf_adat["ig"] if pdf_adat else date.today(), key=f"i_{fv}")
+kelte = c3.date_input("Számla kelte", value=pdf_adat["kelte"] if pdf_adat else date.today(), key=f"k_{f_id}")
+hatarido = c3.date_input("Fizetési határidő", value=pdf_adat["hatarido"] if pdf_adat else date.today(), key=f"h_{f_id}")
+tol = c3.date_input("Időszak kezdete", value=pdf_adat["tol"] if pdf_adat else date.today(), key=f"t_{f_id}")
+ig = c3.date_input("Időszak vége", value=pdf_adat["ig"] if pdf_adat else date.today(), key=f"i_{f_id}")
 
 st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
 alap_df = pd.DataFrame({
@@ -161,7 +164,7 @@ alap_df = pd.DataFrame({
 if fajl and fajl.name.lower().endswith(".xlsx"): alap_df = pd.read_excel(fajl)
 if fajl and fajl.name.lower().endswith(".csv"): alap_df = pd.read_csv(fajl)
 
-szerk_df = st.data_editor(alap_df, num_rows="dynamic", use_container_width=True, key=f"ed_{fv}")
+szerk_df = st.data_editor(alap_df, num_rows="dynamic", use_container_width=True, key=f"ed_{f_id}")
 
 ossz_netto = Decimal("0")
 ossz_brutto = Decimal("0")
@@ -180,5 +183,3 @@ for _, row in szerk_df.iterrows():
     brutto = (netto * (Decimal("1") + afa / Decimal("100"))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     ossz_netto += netto
     ossz_brutto += brutto
-    tetelek.append({"megnevezes_eredeti": str(row.get("Megnevezés") or "Díjtétel"), "mennyiseg": float(menny), "mertekegyseg": str(row.get("Mértékegység") or "kWh"), "egysegar_netto": float(ar), "szamitott_netto": float(netto), "afa_kulcs": float(afa), "szamitott_brutto": float(brutto)})
-
