@@ -61,6 +61,23 @@ def get_helyek(uid):
                     lista.append({"id": h["id"], "nev": h["megnevezes"], "pod": h["pod_eic_azonosito"], "jog": "Helyettesítés"})
     return lista
 
+def mentes_adatbazisba(uj_szamla, tetelek, fajl):
+    try:
+        res = supabase.table("szamlak").insert(uj_szamla).execute()
+        sid = next(iter(res.data))["id"]
+        for t in tetelek:
+            t["szamla_id"] = sid
+        supabase.table("szamla_tetelek").insert(tetelek).execute()
+        st.success(f"✅ Sikeresen megtörtént a számla rögzítése! (Azonosító: #{sid})")
+        if fajl is not None:
+            fajl.seek(0)
+            fnev = f"{date.today().year}_{uj_szamla['szamlaszam'].replace('/', '_')}.pdf"
+            supabase.storage.from_("szamlak-pdf").upload(path=fnev, file=fajl.read(), file_options={"content-type": "application/pdf", "upsert": "true"})
+            supabase.table("szamlak").update({"pdf_utvonal": fnev}).eq("id", sid).execute()
+            st.success(f"📎 A PDF fájl is sikeresen feltöltve: {fnev}")
+    except Exception as hiba:
+        st.error(f"Pontos hiba oka: {hiba}")
+
 st.sidebar.title("⚡ Energia Portál")
 users_data = supabase.table("energetikusok").select("id, nev, szerepkor").eq("aktiv", True).order("nev").execute().data or list()
 users_map = {u["nev"]: u for u in users_data}
@@ -173,16 +190,3 @@ if elteres > Decimal("2.00") or len(tetelek) == 0 or szamlan_brutto <= 0:
     st.warning("A mentés gomb akkor jelenik meg, ha a számított bruttó összeg egyezik a számla összegével.")
     st.stop()
 
-st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
-mentes_gomb = st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary")
-
-if mentes_gomb:
-    if not szamlaszam:
-        st.error("Add meg a számlaszámot!")
-        st.stop()
-    letezo = supabase.table("szamlak").select("id").eq("szolgaltato_id", szolg_id).eq("szamlaszam", szamlaszam).execute().data
-    if letezo:
-        st.warning(f"⚠️ Ez a számlaszám ({szamlaszam}) már rögzítve van ennél a szolgáltatónál!")
-        st.stop()
-    forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
-    stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
