@@ -202,3 +202,13 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl):
         for t in tetelek:
             t["szamla_id"] = sid
         supabase.table("szamla_tetelek").insert(tetelek).execute()
+        if fajl is not None and fajl.name.lower().endswith(".pdf"):
+            fajl.seek(0)
+            fnev = f"{date.today().year}_{uj_szamla['szamlaszam'].replace('/', '_')}.pdf"
+            supabase.storage.from_("szamlak-pdf").upload(path=fnev, file=fajl.read(), file_options={"content-type": "application/pdf", "upsert": "true"})
+            supabase.table("szamlak").update({"pdf_utvonal": fnev}).eq("id", sid).execute()
+        st.session_state["utolso_mentes"] = f"✅ Sikeresen megtörtént a számla rögzítése! (Számlaszám: {uj_szamla['szamlaszam']}, ID: #{sid})"
+        urit_urlap()
+        st.rerun()
+    except Exception as hiba:
+        st.error(f"Pontos hiba oka: {hiba}")
