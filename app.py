@@ -4,29 +4,25 @@ from decimal import Decimal, ROUND_HALF_UP
 import pandas as pd
 import streamlit as st
 from pypdf import PdfReader
-from sqlalchemy import create_engine, text
 from supabase import create_client
 
 st.set_page_config(page_title="Energiaszámla Ellenőrző", page_icon="⚡", layout="wide")
 
 try:
-    DB_URL = st.secrets["DATABASE_URL"]
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+    SUPABASE_URL = st.secrets["SUPABASE_URL"].strip()
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"].strip()
 except Exception as e:
-    st.error(f"Hiányoznak a Secrets beállítások a Streamlit-ben: {e}")
+    st.error(f"Hiányoznak a Secrets beállítások: {e}")
     st.stop()
 
 @st.cache_resource
-def init_connections():
-    eng = create_engine(DB_URL, pool_pre_ping=True)
-    sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-    return eng, sb
+def get_supabase():
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 try:
-    engine, supabase = init_connections()
+    supabase = get_supabase()
 except Exception as e:
-    st.error(f"Nem sikerült csatlakozni a Supabase adatbázishoz: {e}")
+    st.error(f"Kapcsolódási hiba a Supabase-hez: {e}")
     st.stop()
 
 def feldolgoz_pdf(feltoltott_fajl):
@@ -85,90 +81,56 @@ def feldolgoz_pdf(feltoltott_fajl):
     return adatok
 
 def get_energetikus_helyei(uid: int):
-    sql = """
-        SELECT DISTINCT id, megnevezes, pod_eic_azonosito, 'Saját' AS jogosultsag
-        FROM felhasznalasi_helyek
-        WHERE aktiv = TRUE AND (felelos_energetikus_id = :uid OR allando_helyettes_id = :uid)
-        UNION
-        SELECT DISTINCT fh.id, fh.megnevezes, fh.pod_eic_azonosito, 'Helyettesítés' AS jogosultsag
-        FROM felhasznalasi_helyek fh
-        JOIN helyettesitesek h ON fh.felelos_energetikus_id = h.helyettesitett_energetikus_id
-        WHERE fh.aktiv = TRUE AND h.helyettesito_energetikus_id = :uid
-          AND h.aktiv = TRUE AND h.kezdet_datum <= CURRENT_DATE AND h.vege_datum >= CURRENT_DATE
-          AND (h.felhasznalasi_hely_id = fh.id OR h.felhasznalasi_hely_id IS NULL)
-    """
-    with engine.connect() as conn:
-        return pd.read_sql(text(sql), conn, params={"uid": uid})
-
-def ment_adatbazisba(feltoltott_fajl, szamlaszam, szolgaltato_id, hely_id, pdf_adat, szamla_kelte, fizetesi_hatarido, idoszak_tol, idoszak_ig, szamla_brutto_dec, osszes_brutto, elteres, user_id, mentendo_tetelek):
-    try:
-        pdf_utvonal = None
-        if feltoltott_fajl is not None:
-            feltoltott_fajl.seek(0)
-            fajl_bytes = feltoltott_fajl.read()
-            tiszta_fajlnev = f"{date.today().year}/{szamlaszam.replace('/', '_')}_{feltoltott_fajl.name}"
-            supabase.storage.from_("szamlak-pdf").upload(
-                path=tiszta_fajlnev,
-                file=fajl_bytes,
-                file_options={"content-type": "application/pdf", "upsert": "true"}
-            )
-            pdf_utvonal = tiszta_fajlnev
-
-        forras = "PDF" if pdf_adat else ("TABLAZAT" if feltoltott_fajl else "KEZI")
-        statusz = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
-
-        insert_szamla_sql = """
-            INSERT INTO szamlak (
-                szamlaszam, szolgaltato_id, felhasznalasi_hely_id, forras_tipus,
-                szamla_kelte, fizetesi_hatarido, idoszak_tol, idoszak_ig,
-                szamlan_szereplo_brutto, szamitott_brutto, elteres, ellenorzes_statusz,
-                pdf_utvonal, jovahagyta_energetikus_id, jovahagyas_ideje
-            ) VALUES (
-                :szamlaszam, :szolg_id, :hely_id, :forras,
-                :kelte, :hatarido, :tol, :ig,
-                :szamla_br, :szam_br, :elt, :stat,
-                :pdf, :uid, :most
-            ) RETURNING id
-        """
-        insert_tetel_sql = """
-            INSERT INTO szamla_tetelek (
-                szamla_id, megnevezes_eredeti, mennyiseg, mertekegyseg,
-                egysegar_netto, szamitott_netto, afa_kulcs, szamitott_brutto
-            ) VALUES (
-                :sid, :megn, :menny, :me, :ar, :netto, :afa, :brutto
-            )
-        """
-
-        with engine.begin() as conn:
-            res = conn.execute(text(insert_szamla_sql), {
-                "szamlaszam": szamlaszam, "szolg_id": szolgaltato_id, "hely_id": hely_id,
-                "forras": forras, "kelte": szamla_kelte, "hatarido": fizetesi_hatarido,
-                "tol": idoszak_tol, "ig": idoszak_ig, "szamla_br": szamla_brutto_dec,
-                "szam_br": osszes_brutto, "elt": elteres, "stat": statusz,
-                "pdf": pdf_utvonal, "uid": user_id, "most": datetime.now()
+    ma_str = date.today().isoformat()
+    helyek = supabase.table("felhasznalasi_helyek").select("*").eq("aktiv", True).execute().data or []
+    helyettesitesek = (
+        supabase.table("helyettesitesek")
+        .select("*")
+        .eq("helyettesito_energetikus_id", uid)
+        .eq("aktiv", True)
+        .lte("kezdet_datum", ma_str)
+        .gte("vege_datum", ma_str)
+        .execute()
+        .data or []
+    )
+    
+    eredmeny = []
+    latott_ids = set()
+    for h in helyek:
+        if h.get("felelos_energetikus_id") == uid or h.get("allando_helyettes_id") == uid:
+            eredmeny.append({
+                "id": h["id"],
+                "megnevezes": h["megnevezes"],
+                "pod_eic_azonosito": h["pod_eic_azonosito"],
+                "jogosultsag": "Saját"
             })
-            uj_szamla_id = res.scalar()
-
-            for t in mentendo_tetelek:
-                conn.execute(text(insert_tetel_sql), {
-                    "sid": uj_szamla_id, "megn": t["megnevezes"], "menny": t["mennyiseg"],
-                    "me": t["mertekegyseg"], "ar": t["egysegar"], "netto": t["netto"],
-                    "afa": t["afa"], "brutto": t["brutto"]
-                })
-
-        st.balloons()
-        st.success(f"Sikeres mentés! A számla és a PDF bekerült az adatbázisba (ID: #{uj_szamla_id}).")
-    except Exception as e:
-        st.error(f"Hiba történt a mentéskor: {e}")
+            latott_ids.add(h["id"])
+            
+    for hel in helyettesitesek:
+        tavollevo_id = hel.get("helyettesitett_energetikus_id")
+        spec_hely_id = hel.get("felhasznalasi_hely_id")
+        for h in helyek:
+            if h["id"] in latott_ids:
+                continue
+            if h.get("felelos_energetikus_id") == tavollevo_id:
+                if spec_hely_id is None or spec_hely_id == h["id"]:
+                    eredmeny.append({
+                        "id": h["id"],
+                        "megnevezes": h["megnevezes"],
+                        "pod_eic_azonosito": h["pod_eic_azonosito"],
+                        "jogosultsag": "Helyettesítés"
+                    })
+                    latott_ids.add(h["id"])
+    return pd.DataFrame(eredmeny)
 
 # --- FELÜLET INDÍTÁSA ---
 st.sidebar.title("⚡ Energia Portál")
 
 try:
-    with engine.connect() as conn:
-        users_df = pd.read_sql(text("SELECT id, nev, szerepkor FROM energetikusok WHERE aktiv = TRUE ORDER BY nev"), conn)
+    users_data = supabase.table("energetikusok").select("id, nev, szerepkor").eq("aktiv", True).order("nev").execute().data or []
+    users_df = pd.DataFrame(users_data)
 except Exception as e:
-    st.error(f"Adatbázis lekérdezési hiba: {e}")
+    st.error(f"Adatbázis olvasási hiba: {e}")
     st.stop()
 
 if users_df.empty:
@@ -197,7 +159,7 @@ if menu == "🧾 Számla ellenőrzés és feltöltés":
         if pdf_adat["szamlaszam"]:
             st.success(f"PDF sikeresen kiolvasva! Számlaszám: **{pdf_adat['szamlaszam']}**")
 
-    hely_opciok = {f"{r['megnevezes']} ({r['pod_eic_azonosito']}) [{r['jogosultsag']}]": r["id"] for _, r in helyek_df.iterrows()}
+    hely_opciok = {f"{r['megnevezes']} ({r['pod_eic_azonosito']}) [{r['jogosultsag']}]": int(r["id"]) for _, r in helyek_df.iterrows()}
     alap_index = 0
     if pdf_adat and pdf_adat["pod"]:
         for idx, label in enumerate(hely_opciok.keys()):
@@ -212,11 +174,61 @@ if menu == "🧾 Számla ellenőrzés és feltöltés":
         hely_id = hely_opciok[valasztott_hely]
         szamlaszam = st.text_input("Számlaszám", value=pdf_adat["szamlaszam"] if pdf_adat else "")
     with c2:
-        with engine.connect() as conn:
-            szolg_df = pd.read_sql(text("SELECT id, nev FROM szolgaltatok ORDER BY nev"), conn)
+        szolg_data = supabase.table("szolgaltatok").select("id, nev").order("nev").execute().data or []
+        szolg_df = pd.DataFrame(szolg_data)
         if szolg_df.empty:
             st.error("Nincs szolgáltató az adatbázisban! Vegyél fel egyet a Supabase 'szolgaltatok' táblájában.")
             st.stop()
         szolg_opciok = dict(zip(szolg_df["nev"], szolg_df["id"]))
         szolg_nev = st.selectbox("Szolgáltató", list(szolg_opciok.keys()))
-        szolgaltato_id = szolg_opciok[szolg_nev]
+        szolgaltato_id = int(szolg_opciok[szolg_nev])
+        szamlan_brutto = st.number_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=pdf_adat["brutto"] if pdf_adat else 0.0, step=1.0, format="%.2f")
+    with c3:
+        szamla_kelte = st.date_input("Számla kelte", value=pdf_adat["szamla_kelte"] if pdf_adat else date.today())
+        fizetesi_hatarido = st.date_input("Fizetési határidő", value=pdf_adat["fizetesi_hatarido"] if pdf_adat else date.today())
+        idoszak_tol = st.date_input("Időszak kezdete", value=pdf_adat["idoszak_tol"] if pdf_adat else date.today())
+        idoszak_ig = st.date_input("Időszak vége", value=pdf_adat["idoszak_ig"] if pdf_adat else date.today())
+
+    st.subheader("3. Díjtételek ellenőrzése")
+    if pdf_adat and len(pdf_adat["tetelek"]) > 0:
+        alap_tetelek = pd.DataFrame(pdf_adat["tetelek"])
+    elif feltoltott_fajl and feltoltott_fajl.name.lower().endswith(".xlsx"):
+        alap_tetelek = pd.read_excel(feltoltott_fajl)
+    elif feltoltott_fajl and feltoltott_fajl.name.lower().endswith(".csv"):
+        alap_tetelek = pd.read_csv(feltoltott_fajl)
+    else:
+        alap_tetelek = pd.DataFrame([
+            {"Megnevezés": "Energiadíj", "Mennyiség": 0.0, "Mértékegység": "kWh", "Nettó egységár": 0.0, "ÁFA (%)": 27.0}
+        ])
+
+    szerkesztett_df = st.data_editor(alap_tetelek, num_rows="dynamic", use_container_width=True)
+
+    osszes_netto = Decimal("0")
+    osszes_brutto = Decimal("0")
+    mentendo_tetelek = []
+
+    for _, row in szerkesztett_df.iterrows():
+        if pd.isna(row.get("Mennyiség")) or pd.isna(row.get("Nettó egységár")):
+            continue
+        menny = Decimal(str(row["Mennyiség"]))
+        ar = Decimal(str(row["Nettó egységár"]))
+        afa = Decimal(str(row.get("ÁFA (%)", 27.0)))
+
+        netto = (menny * ar).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        brutto = (netto * (Decimal("1") + afa / Decimal("100"))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+        osszes_netto += netto
+        osszes_brutto += brutto
+        mentendo_tetelek.append({
+            "megnevezes": str(row.get("Megnevezés", "Díjtétel")),
+            "mennyiseg": float(menny),
+            "mertekegyseg": str(row.get("Mértékegység", "kWh")),
+            "egysegar": float(ar),
+            "netto": float(netto),
+            "afa": float(afa),
+            "brutto": float(brutto)
+        })
+
+    szamla_brutto_dec = Decimal(str(szamlan_brutto)).quantize(Decimal("0.01"))
+    elteres = abs(szamla_brutto_dec - osszes_brutto)
+
