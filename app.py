@@ -67,6 +67,39 @@ def get_helyek(uid):
             lista.append({"id": h["id"], "nev": h["megnevezes"], "pod": h["pod_eic_azonosito"], "jog": jog})
     return lista
 
+def vegrehajt_mentes(szamlaszam, szolg_id, hely_id, forras, kelte, hatarido, tol, ig, brutto_dec, ossz_brutto, elteres, user_id, tetelek, fajl):
+    if not szamlaszam:
+        st.error("Add meg a számlaszámot a 2. pontban!")
+        return
+    uj_szamla = {
+        "szamlaszam": szamlaszam,
+        "szolgaltato_id": szolg_id,
+        "felhasznalasi_hely_id": hely_id,
+        "forras_tipus": forras,
+        "szamla_kelte": kelte.isoformat(),
+        "fizetesi_hatarido": hatarido.isoformat(),
+        "idoszak_tol": tol.isoformat(),
+        "idoszak_ig": ig.isoformat(),
+        "szamlan_szereplo_brutto": float(brutto_dec),
+        "szamitott_brutto": float(ossz_brutto),
+        "elteres": float(elteres),
+        "ellenorzes_statusz": "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES",
+        "jovahagyta_energetikus_id": user_id
+    }
+    res = supabase.table("szamlak").insert(uj_szamla).execute()
+    sid = next(iter(res.data))["id"]
+    for t in tetelek:
+        t["szamla_id"] = sid
+    supabase.table("szamla_tetelek").insert(tetelek).execute()
+    st.balloons()
+    st.success(f"✅ SIKERES MENTÉS! A számla és a tételek bekerültek az adatbázisba (Azonosító: #{sid})!")
+    if fajl is not None:
+        fajl.seek(0)
+        fnev = f"{date.today().year}_{szamlaszam.replace('/', '_')}.pdf"
+        supabase.storage.from_("szamlak-pdf").upload(path=fnev, file=fajl.read(), file_options={"content-type": "application/pdf", "upsert": "true"})
+        supabase.table("szamlak").update({"pdf_utvonal": fnev}).eq("id", sid).execute()
+        st.success(f"📎 A PDF fájl is sikeresen feltöltve a tárhelyre: {fnev}")
+
 st.sidebar.title("⚡ Energia Portál")
 users_data = supabase.table("energetikusok").select("id, nev, szerepkor").eq("aktiv", True).order("nev").execute().data or list()
 if not users_data:
@@ -165,29 +198,3 @@ for _, row in szerk_df.iterrows():
     if menny == 0 and ar == 0:
         continue
     afa_val = row.get("ÁFA (%)")
-    afa = Decimal(str(afa_val)) if (afa_val is not None and not pd.isna(afa_val)) else Decimal("27.0")
-    netto = (menny * ar).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    brutto = (netto * (Decimal("1") + afa / Decimal("100"))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    ossz_netto += netto
-    ossz_brutto += brutto
-    tetelek.append({"megnevezes_eredeti": str(row.get("Megnevezés") or "Díjtétel"), "mennyiseg": float(menny), "mertekegyseg": str(row.get("Mértékegység") or "kWh"), "egysegar_netto": float(ar), "szamitott_netto": float(netto), "afa_kulcs": float(afa), "szamitott_brutto": float(brutto)})
-
-brutto_dec = Decimal(str(szamlan_brutto)).quantize(Decimal("0.01"))
-elteres = abs(brutto_dec - ossz_brutto)
-
-m1, m2, m3 = st.columns(3)
-m1.metric("Számított Nettó", f"{ossz_netto:,.0f} Ft")
-m2.metric("Számított Bruttó", f"{ossz_brutto:,.0f} Ft")
-m3.metric("Eltérés a számlától", f"{elteres:,.2f} Ft")
-
-if elteres > Decimal("2.00") or len(tetelek) == 0 or szamlan_brutto <= 0:
-    st.warning("A mentés gomb akkor jelenik meg, ha a számított bruttó összeg egyezik a számla összegével.")
-    st.stop()
-
-st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
-if st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary"):
-    if not szamlaszam:
-        st.error("Add meg a számlaszámot!")
-        st.stop()
-    forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
-    stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
