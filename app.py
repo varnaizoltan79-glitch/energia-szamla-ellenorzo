@@ -113,7 +113,6 @@ def get_helyek(uid):
             if h.get("felelos_energetikus_id") == hel.get("helyettesitett_energetikus_id") and (hel.get("felhasznalasi_hely_id") is None or hel.get("felhasznalasi_hely_id") == h["id"]):
                 lista.append({"id": h["id"], "nev": h["megnevezes"], "pod": h["pod_eic_azonosito"], "jog": "Helyettesítés"})
     return lista
-
 def szamol_tetelek(df):
     ossz_netto, ossz_brutto = Decimal("0"), Decimal("0")
     tetelek, hibas_sorok = list(), list()
@@ -160,3 +159,110 @@ def mutat_kimutatasok():
     if not lista:
         st.info("Még nincs mentett számla.")
         return
+    h_map = {h["id"]: h["megnevezes"] for h in (supabase.table("felhasznalasi_helyek").select("id, megnevezes").execute().data or list())}
+    sz_map = {s["id"]: s["nev"] for s in (supabase.table("szolgaltatok").select("id, nev").execute().data or list())}
+    sorok = list({"Számlaszám": s["szamlaszam"], "Felhasználási hely": h_map.get(s["felhasznalasi_hely_id"], ""), "Szolgáltató": sz_map.get(s["szolgaltato_id"], ""), "Időszak kezdete": s["idoszak_tol"], "Időszak vége": s["idoszak_ig"], "Fizetési határidő": s["fizetesi_hatarido"], "Bruttó összeg (Ft)": float(s["szamlan_szereplo_brutto"]), "Státusz": s["ellenorzes_statusz"], "PDF fájl": s["pdf_utvonal"]} for s in lista)
+    df = pd.DataFrame(sorok)
+    st.bar_chart(df.groupby("Felhasználási hely")["Bruttó összeg (Ft)"].sum())
+    st.dataframe(df, use_container_width=True)
+    csv = df.to_csv(index=False).encode("utf-8-sig")
+    st.download_button("📥 Kimutatás letöltése Excelbe (CSV)", data=csv, file_name=f"energia_riport_{date.today()}.csv", mime="text/csv")
+
+st.sidebar.title("⚡ Energia Portál")
+users_data = supabase.table("energetikusok").select("id, nev, szerepkor").eq("aktiv", True).order("nev").execute().data or list()
+users_map = {u["nev"]: u for u in users_data}
+valasztott_nev = st.sidebar.selectbox("Belépett energetikus:", list(users_map.keys()))
+user_sor = users_map[valasztott_nev]
+user_id = int(user_sor["id"])
+st.sidebar.info(f"Szerepkör: **{user_sor['szerepkor']}**")
+
+menu = st.sidebar.radio("Menü", list(("🧾 Számla ellenőrzés és feltöltés", "📊 Kimutatások és Riportok")), on_change=urit_urlap)
+if menu == "📊 Kimutatások és Riportok":
+    mutat_kimutatasok()
+    st.stop()
+
+fv = st.session_state["form_ver"]
+col_fej, col_gomb = st.columns((4, 1))
+col_fej.header("Energiaszámla ellenőrzése és rögzítése")
+if col_gomb.button("🗑️ Új számla / Ürítés"):
+    urit_urlap()
+    st.rerun()
+
+if "utolso_mentes" in st.session_state:
+    st.success(st.session_state.pop("utolso_mentes"))
+
+helyek = get_helyek(user_id)
+if not helyek:
+    st.warning("Nincs hozzád rendelt felhasználási hely a rendszerben.")
+    st.stop()
+
+fajl = st.file_uploader("1. Húzd ide a számlát (Digitális PDF, XML vagy Excel/CSV) – opcionális", type=list(("pdf", "xml", "xlsx", "csv")), key=f"fajl_{fv}")
+f_id = f"{fv}_{fajl.name}" if fajl else f"{fv}_ures"
+dokumentum_adat = None
+
+if fajl and fajl.name.lower().endswith(".pdf"):
+    fajl.seek(0)
+    dokumentum_adat = feldolgoz_pdf(fajl)
+    if not dokumentum_adat["szoveg"]: st.warning("Szkennelt (képalapú) PDF: a tételeket lent kézzel írd be, a PDF fájlt ugyanúgy elmenti a rendszer.")
+    elif dokumentum_adat["tetelek"]: st.success(f"Digitális PDF sikeresen beolvasva! Számlaszám: **{dokumentum_adat['szamlaszam']}** ({len(dokumentum_adat['tetelek'])} díjtétel felismerve)")
+    elif dokumentum_adat["szamlaszam"]: st.success(f"PDF feldolgozva! Számlaszám: **{dokumentum_adat['szamlaszam']}**")
+
+if fajl and fajl.name.lower().endswith(".xml"):
+    fajl.seek(0)
+    dokumentum_adat = feldolgoz_xml(fajl)
+    st.success(f"E-számla (XML) sikeresen beolvasva! Számlaszám: **{dokumentum_adat['szamlaszam']}** ({len(dokumentum_adat['tetelek'])} díjtétel)")
+
+hely_opciok = {f"{h['nev']} ({h['pod']}) [{h['jog']}]": int(h["id"]) for h in helyek}
+alap_idx = 0
+if dokumentum_adat and dokumentum_adat["pod"]:
+    alap_idx = next((i for i, lbl in enumerate(hely_opciok.keys()) if dokumentum_adat["pod"] in lbl), 0)
+
+st.subheader("2. Számla alapadatok")
+c1, c2, c3 = st.columns(3)
+v_hely = c1.selectbox("Felhasználási hely", list(hely_opciok.keys()), index=alap_idx, key=f"hely_{f_id}")
+hely_id = hely_opciok[v_hely]
+szamlaszam = c1.text_input("Számlaszám", value=dokumentum_adat["szamlaszam"] if dokumentum_adat else "", key=f"szsz_{f_id}")
+
+szolg_data = supabase.table("szolgaltatok").select("id, nev").order("nev").execute().data or list()
+szolg_opciok = {s["nev"]: int(s["id"]) for s in szolg_data}
+v_szolg = c2.selectbox("Szolgáltató", list(szolg_opciok.keys()), key=f"szolg_{f_id}")
+szolg_id = szolg_opciok[v_szolg]
+szamlan_brutto = c2.number_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=dokumentum_adat["brutto"] if dokumentum_adat else 0.0, step=1.0, format="%.2f", key=f"br_{f_id}")
+
+kelte = c3.date_input("Számla kelte", value=dokumentum_adat["kelte"] if dokumentum_adat else date.today(), key=f"k_{f_id}")
+hatarido = c3.date_input("Fizetési határidő", value=dokumentum_adat["hatarido"] if dokumentum_adat else date.today(), key=f"h_{f_id}")
+tol = c3.date_input("Időszak kezdete", value=dokumentum_adat["tol"] if dokumentum_adat else date.today(), key=f"t_{f_id}")
+ig = c3.date_input("Időszak vége", value=dokumentum_adat["ig"] if dokumentum_adat else date.today(), key=f"i_{f_id}")
+
+st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
+if dokumentum_adat and dokumentum_adat.get("tetelek"):
+    alap_df = pd.DataFrame(dokumentum_adat["tetelek"])
+elif fajl and fajl.name.lower().endswith(".xlsx"):
+    alap_df = pd.read_excel(fajl)
+elif fajl and fajl.name.lower().endswith(".csv"):
+    alap_df = pd.read_csv(fajl)
+else:
+    alap_df = pd.DataFrame(dict(Megnevezés=["Energiadíj", "Átviteli forgalmi díj", "Elosztói forgalmi díj", "Alapdíj"], Mennyiség=[0.0, 0.0, 0.0, 0.0], Mértékegység=["kWh", "kWh", "kWh", "hó"], Nettó_egységár=[0.0, 0.0, 0.0, 0.0], ÁFA=[27.0, 27.0, 27.0, 27.0], Számlán_bruttó=[0.0, 0.0, 0.0, 0.0]))
+    alap_df.columns = list(("Megnevezés", "Mennyiség", "Mértékegység", "Nettó egységár", "ÁFA (%)", "Számlán bruttó (Ft)"))
+
+szerk_df = st.data_editor(alap_df, num_rows="dynamic", use_container_width=True, key=f"ed_{f_id}")
+ossz_netto, ossz_brutto, tetelek, hibas_sorok = szamol_tetelek(szerk_df)
+
+brutto_dec = Decimal(str(szamlan_brutto)).quantize(Decimal("0.01"))
+elteres = abs(brutto_dec - ossz_brutto)
+
+m1, m2, m3 = st.columns(3)
+m1.metric("Számított Nettó", f"{ossz_netto:,.0f} Ft")
+m2.metric("Számított Bruttó", f"{ossz_brutto:,.0f} Ft")
+m3.metric("Eltérés a végösszegtől", f"{elteres:,.2f} Ft")
+
+if hibas_sorok:
+    st.error("🔴 Eltérés található az alábbi díjtételeknél:\n- " + "\n- ".join(hibas_sorok))
+
+egyezik = (elteres <= Decimal("2.00")) and (len(hibas_sorok) == 0) and (len(tetelek) > 0) and (szamlan_brutto > 0)
+if egyezik: st.success("✅ A számított értékek megegyeznek a számlán szereplőkkel!")
+if not egyezik and not hibas_sorok: st.warning("A mentés gomb akkor válik aktívvá, ha a végösszeg és a megadott tételösszegek is egyeznek.")
+
+gomb = st.button("💾 Számla mentése az adatbázisba", type="primary", disabled=not egyezik)
+forras = "XML" if (fajl and fajl.name.lower().endswith(".xml")) else ("PDF" if dokumentum_adat else ("TABLAZAT" if fajl else "KEZI"))
+stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
