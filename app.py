@@ -30,7 +30,7 @@ def feldolgoz_pdf(fajl):
     adat = {"szoveg": szoveg.strip(), "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0.0, "pod": ""}
     m = re.search(r"(?:Számla\s*sorszáma|Számlaszám|Bizonylat\s*sorszáma)[:\s]+([A-Za-z0-9/-]{5,})", szoveg, re.I)
     if m: adat["szamlaszam"] = m.group(1).strip()
-    alap_nev = fajl.name.rsplit(".", 1)[0]
+    alap_nev = fajl.name.rsplit(".", 1)
     mf = re.search(r"(\d{6,})", alap_nev)
     if not adat["szamlaszam"] and mf: adat["szamlaszam"] = mf.group(1)
     if not adat["szamlaszam"] and len(alap_nev) >= 5: adat["szamlaszam"] = alap_nev
