@@ -180,8 +180,9 @@ if mentes_gomb:
     if not szamlaszam:
         st.error("Add meg a számlaszámot!")
         st.stop()
+    letezo = supabase.table("szamlak").select("id").eq("szolgaltato_id", szolg_id).eq("szamlaszam", szamlaszam).execute().data
+    if letezo:
+        st.warning(f"⚠️ Ez a számlaszám ({szamlaszam}) már rögzítve van ennél a szolgáltatónál!")
+        st.stop()
     forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
     stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
-    uj_szamla = {"szamlaszam": szamlaszam, "szolgaltato_id": szolg_id, "felhasznalasi_hely_id": hely_id, "forras_tipus": forras, "szamla_kelte": kelte.isoformat(), "fizetesi_hatarido": hatarido.isoformat(), "idoszak_tol": tol.isoformat(), "idoszak_ig": ig.isoformat(), "szamlan_szereplo_brutto": float(brutto_dec), "szamitott_brutto": float(ossz_brutto), "elteres": float(elteres), "ellenorzes_statusz": stat, "jovahagyta_energetikus_id": user_id}
-    res = supabase.table("szamlak").insert(uj_szamla).execute()
-    sid = next(iter(res.data))["id"]
