@@ -160,7 +160,7 @@ if users_df.empty:
     st.stop()
 
 kivalasztott_nev = st.sidebar.selectbox("Belépett energetikus:", users_df["nev"])
-user_sor = users_df[users_df["nev"] == kivalasztott_nev].iloc[0]
+user_sor = users_df[users_df["nev"] == kivalasztott_nev].iloc
 user_id = int(user_sor["id"])
 st.sidebar.info(f"Szerepkör: **{user_sor['szerepkor']}**")
 
@@ -179,7 +179,7 @@ if menu == "🧾 Számla ellenőrzés és feltöltés":
         feltoltott_fajl.seek(0)
         pdf_adat = feldolgoz_pdf(feltoltott_fajl)
         if not pdf_adat["nyers_szoveg"]:
-            st.warning("⚠️ Ez a PDF szkennelt képként készült (nem tartalmaz kijelölhető szöveget), ezért az adatokat lent kézzel kell beírni, de a PDF fájlt ugyanúgy elmenti a rendszer!")
+            st.warning("⚠️ Ez a PDF szkennelt képként készült, ezért az adatokat lent kézzel kell beírni, de a PDF fájlt ugyanúgy elmenti a rendszer!")
         elif pdf_adat["szamlaszam"] or pdf_adat["brutto"] > 0:
             st.success(f"✅ PDF feldolgozva! Talált számlaszám: **{pdf_adat['szamlaszam']}**, Bruttó: **{pdf_adat['brutto']:,.0f} Ft**, Tételek: **{len(pdf_adat['tetelek'])} db**")
         
@@ -214,14 +214,15 @@ if menu == "🧾 Számla ellenőrzés és feltöltés":
         idoszak_ig = st.date_input("Időszak vége", value=pdf_adat["idoszak_ig"] if pdf_adat else date.today())
 
     st.subheader("3. Díjtételek ellenőrzése")
+    
+    beolvasott_sorok = []
     if pdf_adat and len(pdf_adat["tetelek"]) > 0:
-        alap_tetelek = pd.DataFrame(pdf_adat["tetelek"])
+        beolvasott_sorok = pdf_adat["tetelek"]
     elif feltoltott_fajl and feltoltott_fajl.name.lower().endswith(".xlsx"):
-        alap_tetelek = pd.read_excel(feltoltott_fajl)
+        feltoltott_fajl.seek(0)
+        beolvasott_sorok = pd.read_excel(feltoltott_fajl).to_dict(orient="records")
     elif feltoltott_fajl and feltoltott_fajl.name.lower().endswith(".csv"):
-        alap_tetelek = pd.read_csv(feltoltott_fajl)
-    else:
-        alap_tetelek = pd.DataFrame([
-            {"Megnevezés": "Energiadíj", "Mennyiség": 0.0, "Mértékegység": "kWh", "Nettó egységár": 0.0, "ÁFA (%)": 27.0}
-        ])
+        feltoltott_fajl.seek(0)
+        beolvasott_sorok = pd.read_csv(feltoltott_fajl).to_dict(orient="records")
 
+    alap_darab = len(beolvasott_sorok) if len(beolvasott_sorok) > 0 else 4
