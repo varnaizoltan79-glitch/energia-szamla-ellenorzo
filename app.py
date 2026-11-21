@@ -67,6 +67,9 @@ def szamol_tetelek(df):
     ossz_netto = Decimal("0")
     ossz_brutto = Decimal("0")
     tetelek = list()
+    ellenorzo_sorok = list()
+    van_tetel_hiba = False
+
     for _, row in df.iterrows():
         m_val = row.get("Mennyiség")
         a_val = row.get("Nettó egységár")
@@ -74,7 +77,8 @@ def szamol_tetelek(df):
             continue
         menny = Decimal(str(m_val))
         ar = Decimal(str(a_val))
-        if menny == 0 and ar == 0:
+        szamla_tetel_br = Decimal(str(row.get("Számlán bruttó (Ft)") or 0))
+        if menny == 0 and ar == 0 and szamla_tetel_br == 0:
             continue
         afa_val = row.get("ÁFA (%)")
         afa = Decimal(str(afa_val)) if (afa_val is not None and not pd.isna(afa_val)) else Decimal("27.0")
@@ -82,8 +86,23 @@ def szamol_tetelek(df):
         brutto = (netto * (Decimal("1") + afa / Decimal("100"))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
         ossz_netto += netto
         ossz_brutto += brutto
-        tetelek.append({"megnevezes_eredeti": str(row.get("Megnevezés") or "Díjtétel"), "mennyiseg": float(menny), "mertekegyseg": str(row.get("Mértékegység") or "kWh"), "egysegar_netto": float(ar), "szamitott_netto": float(netto), "afa_kulcs": float(afa), "szamitott_brutto": float(brutto)})
-    return ossz_netto, ossz_brutto, tetelek
+
+        tetel_elt = abs(szamla_tetel_br - brutto) if szamla_tetel_br > 0 else Decimal("0")
+        hibas_sor = (szamla_tetel_br > 0) and (tetel_elt > Decimal("2.00"))
+        if hibas_sor:
+            van_tetel_hiba = True
+
+        megn = str(row.get("Megnevezés") or "Díjtétel")
+        me = str(row.get("Mértékegység") or "kWh")
+        tetelek.append({"megnevezes_eredeti": megn, "mennyiseg": float(menny), "mertekegyseg": me, "egysegar_netto": float(ar), "szamitott_netto": float(netto), "afa_kulcs": float(afa), "szamitott_brutto": float(brutto)})
+        ellenorzo_sorok.append({"Megnevezés": megn, "Számított nettó (Ft)": float(netto), "Számított bruttó (Ft)": float(brutto), "Számlán bruttó (Ft)": float(szamla_tetel_br), "Eltérés (Ft)": float(tetel_elt), "_hiba": hibas_sor})
+
+    return ossz_netto, ossz_brutto, tetelek, ellenorzo_sorok, van_tetel_hiba
+
+def szinez_hibas_sort(sor):
+    if sor["_hiba"]:
+        return ["background-color: #ffcccc; color: #900000; font-weight: bold"] * len(sor)
+    return [""] * len(sor)
 
 def mentes_adatbazisba(uj_szamla, tetelek, fajl):
     try:
@@ -168,36 +187,3 @@ szolg_data = supabase.table("szolgaltatok").select("id, nev").order("nev").execu
 szolg_opciok = {s["nev"]: int(s["id"]) for s in szolg_data}
 v_szolg = c2.selectbox("Szolgáltató", list(szolg_opciok.keys()), key=f"szolg_{f_id}")
 szolg_id = szolg_opciok[v_szolg]
-szamlan_brutto = c2.number_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=pdf_adat["brutto"] if pdf_adat else 0.0, step=1.0, format="%.2f", key=f"br_{f_id}")
-
-kelte = c3.date_input("Számla kelte", value=pdf_adat["kelte"] if pdf_adat else date.today(), key=f"k_{f_id}")
-hatarido = c3.date_input("Fizetési határidő", value=pdf_adat["hatarido"] if pdf_adat else date.today(), key=f"h_{f_id}")
-tol = c3.date_input("Időszak kezdete", value=pdf_adat["tol"] if pdf_adat else date.today(), key=f"t_{f_id}")
-ig = c3.date_input("Időszak vége", value=pdf_adat["ig"] if pdf_adat else date.today(), key=f"i_{f_id}")
-
-st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
-alap_df = pd.DataFrame(dict(Megnevezés=["Energiadíj", "Átviteli forgalmi díj", "Elosztói forgalmi díj", "Alapdíj"], Mennyiség=[0.0, 0.0, 0.0, 0.0], Mértékegység=["kWh", "kWh", "kWh", "hó"], Nettó_egységár=[0.0, 0.0, 0.0, 0.0], ÁFA=[27.0, 27.0, 27.0, 27.0]))
-alap_df.columns = list(("Megnevezés", "Mennyiség", "Mértékegység", "Nettó egységár", "ÁFA (%)"))
-if fajl and fajl.name.lower().endswith(".xlsx"): alap_df = pd.read_excel(fajl)
-if fajl and fajl.name.lower().endswith(".csv"): alap_df = pd.read_csv(fajl)
-
-szerk_df = st.data_editor(alap_df, num_rows="dynamic", use_container_width=True, key=f"ed_{f_id}")
-ossz_netto, ossz_brutto, tetelek = szamol_tetelek(szerk_df)
-
-brutto_dec = Decimal(str(szamlan_brutto)).quantize(Decimal("0.01"))
-elteres = abs(brutto_dec - ossz_brutto)
-
-m1, m2, m3 = st.columns(3)
-m1.metric("Számított Nettó", f"{ossz_netto:,.0f} Ft")
-m2.metric("Számított Bruttó", f"{ossz_brutto:,.0f} Ft")
-m3.metric("Eltérés a számlától", f"{elteres:,.2f} Ft")
-
-egyezik = (elteres <= Decimal("2.00")) and (len(tetelek) > 0) and (szamlan_brutto > 0)
-if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
-if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha a számított bruttó összeg egyezik a számla összegével.")
-
-gomb = st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary", disabled=not egyezik)
-forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
-stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
-uj_szamla = {"szamlaszam": szamlaszam, "szolgaltato_id": szolg_id, "felhasznalasi_hely_id": hely_id, "forras_tipus": forras, "szamla_kelte": kelte.isoformat(), "fizetesi_hatarido": hatarido.isoformat(), "idoszak_tol": tol.isoformat(), "idoszak_ig": ig.isoformat(), "szamlan_szereplo_brutto": float(brutto_dec), "szamitott_brutto": float(ossz_brutto), "elteres": float(elteres), "ellenorzes_statusz": stat, "jovahagyta_energetikus_id": user_id}
-if gomb and egyezik: mentes_adatbazisba(uj_szamla, tetelek, fajl)
