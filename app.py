@@ -15,16 +15,15 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 @st.cache_resource
 def init_connections():
-    engine = create_engine(DB_URL, pool_pre_ping=True)
+    eng = create_engine(DB_URL, pool_pre_ping=True)
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-    return engine, sb
+    return eng, sb
 
 engine, supabase = init_connections()
 
 def feldolgoz_pdf(feltoltott_fajl):
     reader = PdfReader(feltoltott_fajl)
     teljes_szoveg = "\n".join([page.extract_text() or "" for page in reader.pages])
-    
     adatok = {
         "szamlaszam": "",
         "szamla_kelte": date.today(),
@@ -68,45 +67,37 @@ def feldolgoz_pdf(feltoltott_fajl):
     for sor in teljes_szoveg.splitlines():
         talalat = tetel_minta.search(sor)
         if talalat:
-            nev = talalat.group(1).strip()
-            menny = float(talalat.group(2).replace(".", "").replace(",", "."))
-            me = talalat.group(3).strip()
-            ar = float(talalat.group(4).replace(".", "").replace(",", "."))
-            afa = float(talalat.group(5))
             adatok["tetelek"].append({
-                "Megnevezés": nev,
-                "Mennyiség": menny,
-                "Mértékegység": me,
-                "Nettó egységár": ar,
-                "ÁFA (%)": afa
+                "Megnevezés": talalat.group(1).strip(),
+                "Mennyiség": float(talalat.group(2).replace(".", "").replace(",", ".")),
+                "Mértékegység": talalat.group(3).strip(),
+                "Nettó egységár": float(talalat.group(4).replace(".", "").replace(",", ".")),
+                "ÁFA (%)": float(talalat.group(5))
             })
-
     return adatok
 
-def get_energetikus_helyei(user_id: int):
-    query = text("""
-        SELECT DISTINCT id, megnevezes, pod_eic_azonosito, 'Saját' AS jogosultsag
-        FROM felhasznalasi_helyek
-        WHERE aktiv = TRUE AND (felelos_energetikus_id = :uid OR allando_helyettes_id = :uid)
-        
-        UNION
-        
-        SELECT DISTINCT fh.id, fh.megnevezes, fh.pod_eic_azonosito, 'Helyettesítés' AS jogosultsag
-        FROM felhasznalasi_helyek fh
-        JOIN helyettesitesek h ON fh.felelos_energetikus_id = h.helyettesitett_energetikus_id
-        WHERE fh.aktiv = TRUE AND h.helyettesito_energetikus_id = :uid
-          AND h.aktiv = TRUE AND h.kezdet_datum <= CURRENT_DATE AND h.vege_datum >= CURRENT_DATE
-          AND (h.felhasznalasi_hely_id = fh.id OR h.felhasznalasi_hely_id IS NULL)
-    """)
+def get_energetikus_helyei(uid: int):
+    sql = (
+        "SELECT DISTINCT id, megnevezes, pod_eic_azonosito, 'Saját' AS jogosultsag "
+        "FROM felhasznalasi_helyek "
+        "WHERE aktiv = TRUE AND (felelos_energetikus_id = :uid OR allando_helyettes_id = :uid) "
+        "UNION "
+        "SELECT DISTINCT fh.id, fh.megnevezes, fh.pod_eic_azonosito, 'Helyettesítés' AS jogosultsag "
+        "FROM felhasznalasi_helyek fh "
+        "JOIN helyettesitesek h ON fh.felelos_energetikus_id = h.helyettesitett_energetikus_id "
+        "WHERE fh.aktiv = TRUE AND h.helyettesito_energetikus_id = :uid "
+        "AND h.aktiv = TRUE AND h.kezdet_datum <= CURRENT_DATE AND h.vege_datum >= CURRENT_DATE "
+        "AND (h.felhasznalasi_hely_id = fh.id OR h.felhasznalasi_hely_id IS NULL)"
+    )
     with engine.connect() as conn:
-        return pd.read_sql(query, conn, params={"uid": user_id})
+        return pd.read_sql(text(sql), conn, params={"uid": uid})
 
 st.sidebar.title("⚡ Energia Portál")
 with engine.connect() as conn:
     users_df = pd.read_sql(text("SELECT id, nev, szerepkor FROM energetikusok WHERE aktiv = TRUE ORDER BY nev"), conn)
 
 if users_df.empty:
-    st.error("Nincs aktív energetikus az adatbázisban! Előbb vegyél fel egyet a Supabase Table Editorban.")
+    st.error("Nincs aktív energetikus az adatbázisban! Vegyél fel egyet a Supabase Table Editorban.")
     st.stop()
 
 kivalasztott_nev = st.sidebar.selectbox("Belépett energetikus:", users_df["nev"])
@@ -118,14 +109,12 @@ menu = st.sidebar.radio("Menü", ["🧾 Számla ellenőrzés és feltöltés", "
 
 if menu == "🧾 Számla ellenőrzés és feltöltés":
     st.header("Energiaszámla ellenőrzése és rögzítése")
-    
     helyek_df = get_energetikus_helyei(user_id)
     if helyek_df.empty:
         st.warning("Nincs hozzád rendelt felhasználási hely a rendszerben.")
         st.stop()
 
     feltoltott_fajl = st.file_uploader("1. Húzd ide a számlát (PDF vagy Excel/CSV) – opcionális", type=["pdf", "xlsx", "csv"])
-    
     pdf_adat = None
     if feltoltott_fajl and feltoltott_fajl.name.lower().endswith(".pdf"):
         feltoltott_fajl.seek(0)
@@ -150,6 +139,9 @@ if menu == "🧾 Számla ellenőrzés és feltöltés":
     with c2:
         with engine.connect() as conn:
             szolg_df = pd.read_sql(text("SELECT id, nev FROM szolgaltatok ORDER BY nev"), conn)
+        if szolg_df.empty:
+            st.error("Nincs szolgáltató az adatbázisban! Vegyél fel egyet a Supabase-ben.")
+            st.stop()
         szolg_opciok = dict(zip(szolg_df["nev"], szolg_df["id"]))
         szolg_nev = st.selectbox("Szolgáltató", list(szolg_opciok.keys()))
         szolgaltato_id = szolg_opciok[szolg_nev]
@@ -210,7 +202,6 @@ if menu == "🧾 Számla ellenőrzés és feltöltés":
 
     if elteres <= Decimal("2.00") and len(mentendo_tetelek) > 0 and szamlan_brutto > 0:
         st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
-        
         if st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary"):
             if not szamlaszam:
                 st.error("Add meg a számlaszámot!")
