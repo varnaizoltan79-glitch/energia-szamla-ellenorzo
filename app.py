@@ -156,18 +156,21 @@ ossz_brutto = Decimal("0")
 tetelek = list()
 
 for _, row in szerk_df.iterrows():
-    if pd.isna(row.get("Mennyiség")) or pd.isna(row.get("Nettó egységár")):
+    m_val = row.get("Mennyiség")
+    a_val = row.get("Nettó egységár")
+    if m_val is None or a_val is None or pd.isna(m_val) or pd.isna(a_val):
         continue
-    menny = Decimal(str(row["Mennyiség"]))
-    ar = Decimal(str(row["Nettó egységár"]))
+    menny = Decimal(str(m_val))
+    ar = Decimal(str(a_val))
     if menny == 0 and ar == 0:
         continue
-    afa = Decimal(str(row.get("ÁFA (%)", 27.0)))
+    afa_val = row.get("ÁFA (%)")
+    afa = Decimal(str(afa_val)) if (afa_val is not None and not pd.isna(afa_val)) else Decimal("27.0")
     netto = (menny * ar).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     brutto = (netto * (Decimal("1") + afa / Decimal("100"))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     ossz_netto += netto
     ossz_brutto += brutto
-    tetelek.append({"megnevezes_eredeti": str(row.get("Megnevezés", "Díjtétel")), "mennyiseg": float(menny), "mertekegyseg": str(row.get("Mértékegység", "kWh")), "egysegar_netto": float(ar), "szamitott_netto": float(netto), "afa_kulcs": float(afa), "szamitott_brutto": float(brutto)})
+    tetelek.append({"megnevezes_eredeti": str(row.get("Megnevezés") or "Díjtétel"), "mennyiseg": float(menny), "mertekegyseg": str(row.get("Mértékegység") or "kWh"), "egysegar_netto": float(ar), "szamitott_netto": float(netto), "afa_kulcs": float(afa), "szamitott_brutto": float(brutto)})
 
 brutto_dec = Decimal(str(szamlan_brutto)).quantize(Decimal("0.01"))
 elteres = abs(brutto_dec - ossz_brutto)
@@ -182,12 +185,9 @@ if elteres > Decimal("2.00") or len(tetelek) == 0 or szamlan_brutto <= 0:
     st.stop()
 
 st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
-if not st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary"):
-    st.stop()
-
-if not szamlaszam:
-    st.error("Add meg a számlaszámot!")
-    st.stop()
-
-forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
-stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
+if st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary"):
+    if not szamlaszam:
+        st.error("Add meg a számlaszámot!")
+        st.stop()
+    forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
+    stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
