@@ -92,6 +92,54 @@ def get_energetikus_helyei(uid: int):
     with engine.connect() as conn:
         return pd.read_sql(text(sql), conn, params={"uid": uid})
 
+def ment_adatbazisba(feltoltott_fajl, szamlaszam, szolgaltato_id, hely_id, pdf_adat, szamla_kelte, fizetesi_hatarido, idoszak_tol, idoszak_ig, szamla_brutto_dec, osszes_brutto, elteres, user_id, mentendo_tetelek):
+    try:
+        pdf_utvonal = None
+        if feltoltott_fajl is not None:
+            feltoltott_fajl.seek(0)
+            fajl_bytes = feltoltott_fajl.read()
+            tiszta_fajlnev = f"{date.today().year}/{szamlaszam.replace('/', '_')}_{feltoltott_fajl.name}"
+            supabase.storage.from_("szamlak-pdf").upload(tiszta_fajlnev, fajl_bytes, {"content-type": "application/pdf", "upsert": "true"})
+            pdf_utvonal = tiszta_fajlnev
+
+        forras = "PDF" if pdf_adat else ("TABLAZAT" if feltoltott_fajl else "KEZI")
+        statusz = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
+
+        insert_szamla_sql = (
+            "INSERT INTO szamlak (szamlaszam, szolgaltato_id, felhasznalasi_hely_id, forras_tipus, "
+            "szamla_kelte, fizetesi_hatarido, idoszak_tol, idoszak_ig, szamlan_szereplo_brutto, "
+            "szamitott_brutto, elteres, ellenorzes_statusz, pdf_utvonal, jovahagyta_energetikus_id, jovahagyas_ideje) "
+            "VALUES (:szamlaszam, :szolg_id, :hely_id, :forras, :kelte, :hatarido, :tol, :ig, "
+            ":szamla_br, :szam_br, :elt, :stat, :pdf, :uid, :most) RETURNING id"
+        )
+        insert_tetel_sql = (
+            "INSERT INTO szamla_tetelek (szamla_id, megnevezes_eredeti, mennyiseg, mertekegyseg, "
+            "egysegar_netto, szamitott_netto, afa_kulcs, szamitott_brutto) "
+            "VALUES (:sid, :megn, :menny, :me, :ar, :netto, :afa, :brutto)"
+        )
+
+        with engine.begin() as conn:
+            res = conn.execute(text(insert_szamla_sql), {
+                "szamlaszam": szamlaszam, "szolg_id": szolgaltato_id, "hely_id": hely_id,
+                "forras": forras, "kelte": szamla_kelte, "hatarido": fizetesi_hatarido,
+                "tol": idoszak_tol, "ig": idoszak_ig, "szamla_br": szamla_brutto_dec,
+                "szam_br": osszes_brutto, "elt": elteres, "stat": statusz,
+                "pdf": pdf_utvonal, "uid": user_id, "most": datetime.now()
+            })
+            uj_szamla_id = res.scalar()
+
+            for t in mentendo_tetelek:
+                conn.execute(text(insert_tetel_sql), {
+                    "sid": uj_szamla_id, "megn": t["megnevezes"], "menny": t["mennyiseg"],
+                    "me": t["mertekegyseg"], "ar": t["egysegar"], "netto": t["netto"],
+                    "afa": t["afa"], "brutto": t["brutto"]
+                })
+
+        st.balloons()
+        st.success(f"Sikeres mentés! A számla és a PDF bekerült az adatbázisba (ID: #{uj_szamla_id}).")
+    except Exception as e:
+        st.error(f"Hiba történt a mentéskor: {e}")
+
 st.sidebar.title("⚡ Energia Portál")
 with engine.connect() as conn:
     users_df = pd.read_sql(text("SELECT id, nev, szerepkor FROM energetikusok WHERE aktiv = TRUE ORDER BY nev"), conn)
@@ -154,64 +202,3 @@ if menu == "🧾 Számla ellenőrzés és feltöltés":
 
     st.subheader("3. Díjtételek ellenőrzése")
     if pdf_adat and len(pdf_adat["tetelek"]) > 0:
-        alap_tetelek = pd.DataFrame(pdf_adat["tetelek"])
-    elif feltoltott_fajl and feltoltott_fajl.name.lower().endswith(".xlsx"):
-        alap_tetelek = pd.read_excel(feltoltott_fajl)
-    elif feltoltott_fajl and feltoltott_fajl.name.lower().endswith(".csv"):
-        alap_tetelek = pd.read_csv(feltoltott_fajl)
-    else:
-        alap_tetelek = pd.DataFrame([
-            {"Megnevezés": "Energiadíj", "Mennyiség": 0.0, "Mértékegység": "kWh", "Nettó egységár": 0.0, "ÁFA (%)": 27.0}
-        ])
-
-    szerkesztett_df = st.data_editor(alap_tetelek, num_rows="dynamic", use_container_width=True)
-
-    osszes_netto = Decimal("0")
-    osszes_brutto = Decimal("0")
-    mentendo_tetelek = []
-
-    for _, row in szerkesztett_df.iterrows():
-        if pd.isna(row["Mennyiség"]) or pd.isna(row["Nettó egységár"]):
-            continue
-        menny = Decimal(str(row["Mennyiség"]))
-        ar = Decimal(str(row["Nettó egységár"]))
-        afa = Decimal(str(row.get("ÁFA (%)", 27.0)))
-
-        netto = (menny * ar).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-        brutto = (netto * (Decimal("1") + afa / Decimal("100"))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-
-        osszes_netto += netto
-        osszes_brutto += brutto
-        mentendo_tetelek.append({
-            "megnevezes": str(row["Megnevezés"]),
-            "mennyiseg": menny,
-            "mertekegyseg": str(row.get("Mértékegység", "kWh")),
-            "egysegar": ar,
-            "netto": netto,
-            "afa": afa,
-            "brutto": brutto
-        })
-
-    szamla_brutto_dec = Decimal(str(szamlan_brutto)).quantize(Decimal("0.01"))
-    elteres = abs(szamla_brutto_dec - osszes_brutto)
-
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Számított Nettó", f"{osszes_netto:,.0f} Ft")
-    m2.metric("Számított Bruttó", f"{osszes_brutto:,.0f} Ft")
-    m3.metric("Eltérés a számlától", f"{elteres:,.2f} Ft")
-
-    if elteres <= Decimal("2.00") and len(mentendo_tetelek) > 0 and szamlan_brutto > 0:
-        st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
-        if st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary"):
-            if not szamlaszam:
-                st.error("Add meg a számlaszámot!")
-            else:
-                try:
-                    pdf_utvonal = None
-                    if feltoltott_fajl is not None:
-                        feltoltott_fajl.seek(0)
-                        fajl_bytes = feltoltott_fajl.read()
-                        tiszta_fajlnev = f"{date.today().year}/{szamlaszam.replace('/', '_')}_{feltoltott_fajl.name}"
-                        supabase.storage.from_("szamlak-pdf").upload(tiszta_fajlnev, fajl_bytes, {"content-type": "application/pdf", "upsert": "true"})
-                        pdf_utvonal = tiszta_fajlnev
-
