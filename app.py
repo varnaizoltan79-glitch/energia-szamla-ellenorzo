@@ -186,7 +186,7 @@ m1.metric("Számított Nettó", f"{ossz_netto:,.0f} Ft")
 m2.metric("Számított Bruttó", f"{ossz_brutto:,.0f} Ft")
 m3.metric("Eltérés a számlától", f"{elteres:,.2f} Ft")
 
-if elteres > Decimal("2.00") or len(tetelek) == 0 or szamlan_brutto <= 0:
-    st.warning("A mentés gomb akkor jelenik meg, ha a számított bruttó összeg egyezik a számla összegével.")
-    st.stop()
-
+egyezik = (elteres <= Decimal("2.00")) and (len(tetelek) > 0) and (szamlan_brutto > 0)
+if egyezik:
+    st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
+else:
