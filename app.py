@@ -221,6 +221,6 @@ if menu == "🧾 Számla ellenőrzés és feltöltés":
                         feltoltott_fajl.seek(0)
                         fajl_bytes = feltoltott_fajl.read()
                         tiszta_fajlnev = f"{date.today().year}/{szamlaszam.replace('/', '_')}_{feltoltott_fajl.name}"
-                        supabase.storage.from_("szamlak-pdf").upload(
-                            path=tiszta_fajlnev,
-                            file=fajl_bytes,
+                        supabase.storage.from_("szamlak-pdf").upload(tiszta_fajlnev, fajl_bytes, {"content-type": "application/pdf", "upsert": "true"})
+                        pdf_utvonal = tiszta_fajlnev
+
