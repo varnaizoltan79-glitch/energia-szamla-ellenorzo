@@ -19,7 +19,8 @@ supabase = get_supabase()
 
 def feldolgoz_pdf(fajl):
     reader = PdfReader(fajl)
-    szoveg = "\n".join(list(p.extract_text() or "" for p in reader.pages))
+    oldalak = list(p.extract_text() or "" for p in reader.pages)
+    szoveg = "\n".join(oldalak)
     adat = {"szoveg": szoveg.strip(), "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0.0, "pod": ""}
     m = re.search(r"Számla\s*sorszáma[:\s]+([A-Za-z0-9/-]{6,})", szoveg, re.I)
     if m:
@@ -88,6 +89,10 @@ if menu == "📊 Kimutatások és Riportok":
 
 st.header("Energiaszámla ellenőrzése és rögzítése")
 helyek = get_helyek(user_id)
+if not helyek:
+    st.warning("Nincs hozzád rendelt felhasználási hely a rendszerben.")
+    st.stop()
+
 fajl = st.file_uploader("1. Húzd ide a számlát (PDF vagy Excel/CSV) – opcionális", type=list(("pdf", "xlsx", "csv")))
 pdf_adat = None
 if fajl and fajl.name.lower().endswith(".pdf"):
@@ -180,7 +185,3 @@ if mentes_gomb:
     uj_szamla = {"szamlaszam": szamlaszam, "szolgaltato_id": szolg_id, "felhasznalasi_hely_id": hely_id, "forras_tipus": forras, "szamla_kelte": kelte.isoformat(), "fizetesi_hatarido": hatarido.isoformat(), "idoszak_tol": tol.isoformat(), "idoszak_ig": ig.isoformat(), "szamlan_szereplo_brutto": float(brutto_dec), "szamitott_brutto": float(ossz_brutto), "elteres": float(elteres), "ellenorzes_statusz": stat, "jovahagyta_energetikus_id": user_id}
     res = supabase.table("szamlak").insert(uj_szamla).execute()
     sid = next(iter(res.data))["id"]
-    for t in tetelek:
-        t["szamla_id"] = sid
-    supabase.table("szamla_tetelek").insert(tetelek).execute()
-    st.balloons()
