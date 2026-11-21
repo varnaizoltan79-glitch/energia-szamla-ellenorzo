@@ -17,6 +17,12 @@ def get_supabase():
 
 supabase = get_supabase()
 
+if "form_ver" not in st.session_state:
+    st.session_state["form_ver"] = 0
+
+def urit_urlap():
+    st.session_state["form_ver"] += 1
+
 def feldolgoz_pdf(fajl):
     reader = PdfReader(fajl)
     oldalak = list(p.extract_text() or "" for p in reader.pages)
@@ -62,13 +68,14 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl):
         for t in tetelek:
             t["szamla_id"] = sid
         supabase.table("szamla_tetelek").insert(tetelek).execute()
-        st.success(f"✅ Sikeresen megtörtént a számla rögzítése! (Azonosító: #{sid})")
         if fajl is not None:
             fajl.seek(0)
             fnev = f"{date.today().year}_{uj_szamla['szamlaszam'].replace('/', '_')}.pdf"
             supabase.storage.from_("szamlak-pdf").upload(path=fnev, file=fajl.read(), file_options={"content-type": "application/pdf", "upsert": "true"})
             supabase.table("szamlak").update({"pdf_utvonal": fnev}).eq("id", sid).execute()
-            st.success(f"📎 A PDF fájl is sikeresen feltöltve: {fnev}")
+        st.session_state["utolso_mentes"] = f"✅ Sikeresen megtörtént a számla rögzítése! (Számlaszám: {uj_szamla['szamlaszam']}, ID: #{sid})"
+        urit_urlap()
+        st.rerun()
     except Exception as hiba:
         st.error(f"Pontos hiba oka: {hiba}")
 
@@ -80,7 +87,7 @@ user_sor = users_map[valasztott_nev]
 user_id = int(user_sor["id"])
 st.sidebar.info(f"Szerepkör: **{user_sor['szerepkor']}**")
 
-menu = st.sidebar.radio("Menü", list(("🧾 Számla ellenőrzés és feltöltés", "📊 Kimutatások és Riportok")))
+menu = st.sidebar.radio("Menü", list(("🧾 Számla ellenőrzés és feltöltés", "📊 Kimutatások és Riportok")), on_change=urit_urlap)
 
 if menu == "📊 Kimutatások és Riportok":
     st.header("Rögzített számlák és kimutatások")
@@ -98,13 +105,22 @@ if menu == "📊 Kimutatások és Riportok":
     st.download_button("📥 Kimutatás letöltése Excelbe (CSV)", data=csv, file_name=f"energia_riport_{date.today()}.csv", mime="text/csv")
     st.stop()
 
-st.header("Energiaszámla ellenőrzése és rögzítése")
+fv = st.session_state["form_ver"]
+col_fej, col_gomb = st.columns([4, 1])
+col_fej.header("Energiaszámla ellenőrzése és rögzítése")
+if col_gomb.button("🗑️ Új számla / Ürítés"):
+    urit_urlap()
+    st.rerun()
+
+if "utolso_mentes" in st.session_state:
+    st.success(st.session_state.pop("utolso_mentes"))
+
 helyek = get_helyek(user_id)
 if not helyek:
     st.warning("Nincs hozzád rendelt felhasználási hely a rendszerben.")
     st.stop()
 
-fajl = st.file_uploader("1. Húzd ide a számlát (PDF vagy Excel/CSV) – opcionális", type=list(("pdf", "xlsx", "csv")))
+fajl = st.file_uploader("1. Húzd ide a számlát (PDF vagy Excel/CSV) – opcionális", type=list(("pdf", "xlsx", "csv")), key=f"fajl_{fv}")
 pdf_adat = None
 if fajl and fajl.name.lower().endswith(".pdf"):
     fajl.seek(0)
@@ -119,20 +135,20 @@ if pdf_adat and pdf_adat["pod"]:
 
 st.subheader("2. Számla alapadatok")
 c1, c2, c3 = st.columns(3)
-v_hely = c1.selectbox("Felhasználási hely", list(hely_opciok.keys()), index=alap_idx)
+v_hely = c1.selectbox("Felhasználási hely", list(hely_opciok.keys()), index=alap_idx, key=f"hely_{fv}")
 hely_id = hely_opciok[v_hely]
-szamlaszam = c1.text_input("Számlaszám", value=pdf_adat["szamlaszam"] if pdf_adat else "")
+szamlaszam = c1.text_input("Számlaszám", value=pdf_adat["szamlaszam"] if pdf_adat else "", key=f"szsz_{fv}")
 
 szolg_data = supabase.table("szolgaltatok").select("id, nev").order("nev").execute().data or list()
 szolg_opciok = {s["nev"]: int(s["id"]) for s in szolg_data}
-v_szolg = c2.selectbox("Szolgáltató", list(szolg_opciok.keys()))
+v_szolg = c2.selectbox("Szolgáltató", list(szolg_opciok.keys()), key=f"szolg_{fv}")
 szolg_id = szolg_opciok[v_szolg]
-szamlan_brutto = c2.number_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=pdf_adat["brutto"] if pdf_adat else 0.0, step=1.0, format="%.2f")
+szamlan_brutto = c2.number_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=pdf_adat["brutto"] if pdf_adat else 0.0, step=1.0, format="%.2f", key=f"br_{fv}")
 
-kelte = c3.date_input("Számla kelte", value=pdf_adat["kelte"] if pdf_adat else date.today())
-hatarido = c3.date_input("Fizetési határidő", value=pdf_adat["hatarido"] if pdf_adat else date.today())
-tol = c3.date_input("Időszak kezdete", value=pdf_adat["tol"] if pdf_adat else date.today())
-ig = c3.date_input("Időszak vége", value=pdf_adat["ig"] if pdf_adat else date.today())
+kelte = c3.date_input("Számla kelte", value=pdf_adat["kelte"] if pdf_adat else date.today(), key=f"k_{fv}")
+hatarido = c3.date_input("Fizetési határidő", value=pdf_adat["hatarido"] if pdf_adat else date.today(), key=f"h_{fv}")
+tol = c3.date_input("Időszak kezdete", value=pdf_adat["tol"] if pdf_adat else date.today(), key=f"t_{fv}")
+ig = c3.date_input("Időszak vége", value=pdf_adat["ig"] if pdf_adat else date.today(), key=f"i_{fv}")
 
 st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
 alap_df = pd.DataFrame({
@@ -145,7 +161,7 @@ alap_df = pd.DataFrame({
 if fajl and fajl.name.lower().endswith(".xlsx"): alap_df = pd.read_excel(fajl)
 if fajl and fajl.name.lower().endswith(".csv"): alap_df = pd.read_csv(fajl)
 
-szerk_df = st.data_editor(alap_df, num_rows="dynamic", use_container_width=True)
+szerk_df = st.data_editor(alap_df, num_rows="dynamic", use_container_width=True, key=f"ed_{fv}")
 
 ossz_netto = Decimal("0")
 ossz_brutto = Decimal("0")
@@ -165,22 +181,4 @@ for _, row in szerk_df.iterrows():
     ossz_netto += netto
     ossz_brutto += brutto
     tetelek.append({"megnevezes_eredeti": str(row.get("Megnevezés") or "Díjtétel"), "mennyiseg": float(menny), "mertekegyseg": str(row.get("Mértékegység") or "kWh"), "egysegar_netto": float(ar), "szamitott_netto": float(netto), "afa_kulcs": float(afa), "szamitott_brutto": float(brutto)})
-
-brutto_dec = Decimal(str(szamlan_brutto)).quantize(Decimal("0.01"))
-elteres = abs(brutto_dec - ossz_brutto)
-
-m1, m2, m3 = st.columns(3)
-m1.metric("Számított Nettó", f"{ossz_netto:,.0f} Ft")
-m2.metric("Számított Bruttó", f"{ossz_brutto:,.0f} Ft")
-m3.metric("Eltérés a számlától", f"{elteres:,.2f} Ft")
-
-egyezik = (elteres <= Decimal("2.00")) and (len(tetelek) > 0) and (szamlan_brutto > 0)
-if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
-if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha a számított bruttó összeg egyezik a számla összegével.")
-gomb = st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary", disabled=not egyezik)
-forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
-stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
-uj_szamla = {"szamlaszam": szamlaszam, "szolgaltato_id": szolg_id, "felhasznalasi_hely_id": hely_id, "forras_tipus": forras, "szamla_kelte": kelte.isoformat(), "fizetesi_hatarido": hatarido.isoformat(), "idoszak_tol": tol.isoformat(), "idoszak_ig": ig.isoformat(), "szamlan_szereplo_brutto": float(brutto_dec), "szamitott_brutto": float(ossz_brutto), "elteres": float(elteres), "ellenorzes_statusz": stat, "jovahagyta_energetikus_id": user_id}
-if gomb and egyezik: mentes_adatbazisba(uj_szamla, tetelek, fajl)
-
 
