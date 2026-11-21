@@ -192,9 +192,10 @@ if not szamlaszam:
 pdf_ut = None
 if fajl is not None:
     fajl.seek(0)
-    fnev = f"{date.today().year}/{szamlaszam.replace('/', '_')}_{fajl.name}"
-    supabase.storage.from_("szamlak-pdf").upload(path=fnev, file=fajl.read(), file_options={"content-type": "application/pdf", "upsert": "true"})
-    pdf_ut = fnev
+    fnev = f"{date.today().year}_{szamlaszam.replace('/', '_')}.pdf"
+    try:
+        supabase.storage.from_("szamlak-pdf").upload(path=fnev, file=fajl.read(), file_options={"content-type": "application/pdf", "upsert": "true"})
+        pdf_ut = fnev
+    except Exception as pdf_hiba:
+        st.warning(f"A számlaadatokat mentem, de a PDF feltöltése a Storage-ba nem sikerült: {pdf_hiba}")
 
-forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
-stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
