@@ -177,4 +177,10 @@ m3.metric("Eltérés a számlától", f"{elteres:,.2f} Ft")
 egyezik = (elteres <= Decimal("2.00")) and (len(tetelek) > 0) and (szamlan_brutto > 0)
 if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
 if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha a számított bruttó összeg egyezik a számla összegével.")
+    gomb = st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary", disabled=not egyezik)
+forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
+stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
+uj_szamla = {"szamlaszam": szamlaszam, "szolgaltato_id": szolg_id, "felhasznalasi_hely_id": hely_id, "forras_tipus": forras, "szamla_kelte": kelte.isoformat(), "fizetesi_hatarido": hatarido.isoformat(), "idoszak_tol": tol.isoformat(), "idoszak_ig": ig.isoformat(), "szamlan_szereplo_brutto": float(brutto_dec), "szamitott_brutto": float(ossz_brutto), "elteres": float(elteres), "ellenorzes_statusz": stat, "jovahagyta_energetikus_id": user_id}
+if gomb and egyezik: mentes_adatbazisba(uj_szamla, tetelek, fajl)
+
 
