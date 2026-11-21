@@ -63,6 +63,28 @@ def get_helyek(uid):
                     lista.append({"id": h["id"], "nev": h["megnevezes"], "pod": h["pod_eic_azonosito"], "jog": "Helyettesítés"})
     return lista
 
+def szamol_tetelek(df):
+    ossz_netto = Decimal("0")
+    ossz_brutto = Decimal("0")
+    tetelek = list()
+    for _, row in df.iterrows():
+        m_val = row.get("Mennyiség")
+        a_val = row.get("Nettó egységár")
+        if m_val is None or a_val is None or pd.isna(m_val) or pd.isna(a_val):
+            continue
+        menny = Decimal(str(m_val))
+        ar = Decimal(str(a_val))
+        if menny == 0 and ar == 0:
+            continue
+        afa_val = row.get("ÁFA (%)")
+        afa = Decimal(str(afa_val)) if (afa_val is not None and not pd.isna(afa_val)) else Decimal("27.0")
+        netto = (menny * ar).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        brutto = (netto * (Decimal("1") + afa / Decimal("100"))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        ossz_netto += netto
+        ossz_brutto += brutto
+        tetelek.append({"megnevezes_eredeti": str(row.get("Megnevezés") or "Díjtétel"), "mennyiseg": float(menny), "mertekegyseg": str(row.get("Mértékegység") or "kWh"), "egysegar_netto": float(ar), "szamitott_netto": float(netto), "afa_kulcs": float(afa), "szamitott_brutto": float(brutto)})
+    return ossz_netto, ossz_brutto, tetelek
+
 def mentes_adatbazisba(uj_szamla, tetelek, fajl):
     try:
         res = supabase.table("szamlak").insert(uj_szamla).execute()
@@ -158,28 +180,3 @@ alap_df = pd.DataFrame({
     "Megnevezés": list(("Energiadíj", "Átviteli forgalmi díj", "Elosztói forgalmi díj", "Alapdíj")),
     "Mennyiség": list((0.0, 0.0, 0.0, 0.0)),
     "Mértékegység": list(("kWh", "kWh", "kWh", "hó")),
-    "Nettó egységár": list((0.0, 0.0, 0.0, 0.0)),
-    "ÁFA (%)": list((27.0, 27.0, 27.0, 27.0))
-})
-if fajl and fajl.name.lower().endswith(".xlsx"): alap_df = pd.read_excel(fajl)
-if fajl and fajl.name.lower().endswith(".csv"): alap_df = pd.read_csv(fajl)
-
-szerk_df = st.data_editor(alap_df, num_rows="dynamic", use_container_width=True, key=f"ed_{f_id}")
-
-ossz_netto = Decimal("0")
-ossz_brutto = Decimal("0")
-tetelek = list()
-
-for _, row in szerk_df.iterrows():
-    m_val = row.get("Mennyiség")
-    a_val = row.get("Nettó egységár")
-    if m_val is None or a_val is None or pd.isna(m_val) or pd.isna(a_val): continue
-    menny = Decimal(str(m_val))
-    ar = Decimal(str(a_val))
-    if menny == 0 and ar == 0: continue
-    afa_val = row.get("ÁFA (%)")
-    afa = Decimal(str(afa_val)) if (afa_val is not None and not pd.isna(afa_val)) else Decimal("27.0")
-    netto = (menny * ar).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    brutto = (netto * (Decimal("1") + afa / Decimal("100"))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    ossz_netto += netto
-    ossz_brutto += brutto
