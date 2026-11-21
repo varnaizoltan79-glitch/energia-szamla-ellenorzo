@@ -189,12 +189,5 @@ if not szamlaszam:
     st.error("Add meg a számlaszámot!")
     st.stop()
 
-pdf_ut = None
-if fajl is not None:
-    fajl.seek(0)
-    fnev = f"{date.today().year}_{szamlaszam.replace('/', '_')}.pdf"
-    supabase.storage.from_("szamlak-pdf").upload(path=fnev, file=fajl.read(), file_options={"content-type": "application/pdf", "upsert": "true"})
-    pdf_ut = fnev
-
 forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
 stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
