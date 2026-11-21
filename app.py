@@ -19,16 +19,20 @@ except Exception as e:
 def get_supabase():
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
-try:
-    supabase = get_supabase()
-except Exception as e:
-    st.error(f"Kapcsolódási hiba a Supabase-hez: {e}")
-    st.stop()
+supabase = get_supabase()
 
 def feldolgoz_pdf(feltoltott_fajl):
     reader = PdfReader(feltoltott_fajl)
-    teljes_szoveg = "\n".join([page.extract_text() or "" for page in reader.pages])
+    oldalak_szovege = []
+    for page in reader.pages:
+        try:
+            oldalak_szovege.append(page.extract_text(extraction_mode="layout") or "")
+        except Exception:
+            oldalak_szovege.append(page.extract_text() or "")
+    teljes_szoveg = "\n".join(oldalak_szovege)
+
     adatok = {
+        "nyers_szoveg": teljes_szoveg.strip(),
         "szamlaszam": "",
         "szamla_kelte": date.today(),
         "fizetesi_hatarido": date.today(),
@@ -39,45 +43,69 @@ def feldolgoz_pdf(feltoltott_fajl):
         "tetelek": []
     }
 
-    m_szamlaszam = re.search(r"Számla sorszáma:\s*([A-Za-z0-9/-]+)", teljes_szoveg)
+    # 1. Számlaszám keresése (szövegből vagy fájlnévből)
+    m_szamlaszam = re.search(r"Számla\s*sorszáma[:\s]+([A-Za-z0-9/-]{6,})", teljes_szoveg, re.IGNORECASE)
     if m_szamlaszam:
         adatok["szamlaszam"] = m_szamlaszam.group(1).strip()
+    else:
+        m_fajl = re.search(r"(\d{8,})", feltoltott_fajl.name)
+        if m_fajl:
+            adatok["szamlaszam"] = m_fajl.group(1)
 
-    m_kelte = re.search(r"Számla kelte:\s*(\d{4}\.\d{2}\.\d{2})", teljes_szoveg)
+    # 2. Dátumok keresése
+    m_kelte = re.search(r"Számla\s*kelte[:\s]+(\d{4}\.\d{2}\.\d{2})", teljes_szoveg, re.IGNORECASE)
     if m_kelte:
         adatok["szamla_kelte"] = datetime.strptime(m_kelte.group(1), "%Y.%m.%d").date()
 
-    m_hatarido = re.search(r"Fizetési határidő:\s*(\d{4}\.\d{2}\.\d{2})", teljes_szoveg)
+    m_hatarido = re.search(r"Fizetési\s*határidő[:\s]+(\d{4}\.\d{2}\.\d{2})", teljes_szoveg, re.IGNORECASE)
     if m_hatarido:
         adatok["fizetesi_hatarido"] = datetime.strptime(m_hatarido.group(1), "%Y.%m.%d").date()
 
-    m_idoszak = re.search(r"Elszámolt időszak:\s*(\d{4}\.\d{2}\.\d{2})\s*-\s*(\d{4}\.\d{2}\.\d{2})", teljes_szoveg)
+    m_idoszak = re.search(r"Elszámolt\s*időszak[:\s]+(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", teljes_szoveg, re.IGNORECASE)
     if m_idoszak:
         adatok["idoszak_tol"] = datetime.strptime(m_idoszak.group(1), "%Y.%m.%d").date()
         adatok["idoszak_ig"] = datetime.strptime(m_idoszak.group(2), "%Y.%m.%d").date()
 
-    m_brutto = re.search(r"Fizetendő összeg:\s*([\d\.\s]+)\s*Ft", teljes_szoveg)
+    # 3. Bruttó végösszeg keresése
+    m_brutto = re.search(r"(?:Fizetendő\s*összeg|Számla\s*végösszege|Bruttó\s*összesen)[:\s]+([\d\.\s]+)\s*Ft", teljes_szoveg, re.IGNORECASE)
     if m_brutto:
         tiszta_szam = m_brutto.group(1).replace(".", "").replace(" ", "").replace(",", ".")
-        adatok["brutto"] = float(tiszta_szam)
+        try:
+            adatok["brutto"] = float(tiszta_szam)
+        except ValueError:
+            pass
 
-    m_pod = re.search(r"Mérési pont azonosító:\s*(HU[A-Za-z0-9-]+)", teljes_szoveg)
+    # 4. POD / mérési pont azonosító keresése
+    m_pod = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", teljes_szoveg)
     if m_pod:
         adatok["pod"] = m_pod.group(1).strip()
 
+    # 5. Díjtételek sorainak keresése (rugalmas táblázatos minta)
     tetel_minta = re.compile(
-        r"(.+?)\s+\d{4}\.\d{2}\.\d{2}-\d{4}\.\d{2}\.\d{2}\s+([\d\.,]+)\s+(kWh|hó|m3|MJ|db)\s+([\d\.,]+)\s*Ft/\w+\s+[\d\.,]+\s+(\d+)"
+        r"([A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű\"'\(\)\-\s]{4,}?)\s+(?:\d{4}\.\d{2}\.\d{2}\s*[-–]\s*\d{4}\.\d{2}\.\d{2}\s+)?([\d\s\.,]+)\s+(kWh|hó|m3|MJ|db)\s+([\d\s\.,]+)\s*(?:Ft/\w+)?\s+[\d\s\.,]+\s+(\d{1,2})"
     )
     for sor in teljes_szoveg.splitlines():
         talalat = tetel_minta.search(sor)
         if talalat:
-            adatok["tetelek"].append({
-                "Megnevezés": talalat.group(1).strip(),
-                "Mennyiség": float(talalat.group(2).replace(".", "").replace(",", ".")),
-                "Mértékegység": talalat.group(3).strip(),
-                "Nettó egységár": float(talalat.group(4).replace(".", "").replace(",", ".")),
-                "ÁFA (%)": float(talalat.group(5))
-            })
+            nev = re.sub(r"\s+", " ", talalat.group(1)).strip()
+            if len(nev) < 4 or "összesen" in nev.lower():
+                continue
+            try:
+                menny = float(talalat.group(2).replace(" ", "").replace(".", "").replace(",", "."))
+                me = talalat.group(3).strip()
+                ar = float(talalat.group(4).replace(" ", "").replace(".", "").replace(",", "."))
+                afa = float(talalat.group(5))
+                if menny > 0 and ar > 0:
+                    adatok["tetelek"].append({
+                        "Megnevezés": nev,
+                        "Mennyiség": menny,
+                        "Mértékegység": me,
+                        "Nettó egységár": ar,
+                        "ÁFA (%)": afa
+                    })
+            except ValueError:
+                continue
+
     return adatok
 
 def get_energetikus_helyei(uid: int):
@@ -134,11 +162,11 @@ except Exception as e:
     st.stop()
 
 if users_df.empty:
-    st.warning("Nincs aktív energetikus az adatbázisban! Nyisd meg a Supabase Table Editorban az 'energetikusok' táblát, és vegyél fel legalább egy sort.")
+    st.warning("Nincs aktív energetikus az adatbázisban!")
     st.stop()
 
 kivalasztott_nev = st.sidebar.selectbox("Belépett energetikus:", users_df["nev"])
-user_sor = users_df[users_df["nev"] == kivalasztott_nev].iloc[0]
+user_sor = users_df[users_df["nev"] == kivalasztott_nev].iloc
 user_id = int(user_sor["id"])
 st.sidebar.info(f"Szerepkör: **{user_sor['szerepkor']}**")
 
@@ -148,7 +176,7 @@ if menu == "🧾 Számla ellenőrzés és feltöltés":
     st.header("Energiaszámla ellenőrzése és rögzítése")
     helyek_df = get_energetikus_helyei(user_id)
     if helyek_df.empty:
-        st.warning("Nincs hozzád rendelt felhasználási hely a rendszerben. Rendelj hozzá egyet a Supabase 'felhasznalasi_helyek' táblájában!")
+        st.warning("Nincs hozzád rendelt felhasználási hely a rendszerben.")
         st.stop()
 
     feltoltott_fajl = st.file_uploader("1. Húzd ide a számlát (PDF vagy Excel/CSV) – opcionális", type=["pdf", "xlsx", "csv"])
@@ -156,8 +184,13 @@ if menu == "🧾 Számla ellenőrzés és feltöltés":
     if feltoltott_fajl and feltoltott_fajl.name.lower().endswith(".pdf"):
         feltoltott_fajl.seek(0)
         pdf_adat = feldolgoz_pdf(feltoltott_fajl)
-        if pdf_adat["szamlaszam"]:
-            st.success(f"PDF sikeresen kiolvasva! Számlaszám: **{pdf_adat['szamlaszam']}**")
+        if not pdf_adat["nyers_szoveg"]:
+            st.warning("⚠️ Ez a PDF szkennelt képként készült (nem tartalmaz kijelölhető szöveget), ezért az adatokat lent kézzel kell beírni, de a PDF fájlt ugyanúgy elmenti a rendszer!")
+        elif pdf_adat["szamlaszam"] or pdf_adat["brutto"] > 0:
+            st.success(f"✅ PDF feldolgozva! Talált számlaszám: **{pdf_adat['szamlaszam']}**, Bruttó: **{pdf_adat['brutto']:,.0f} Ft**, Tételek: **{len(pdf_adat['tetelek'])} db**")
+        
+        with st.expander("🔍 Kiolvasott PDF szöveg megtekintése (ellenőrzéshez)"):
+            st.text(pdf_adat["nyers_szoveg"][:3000] if pdf_adat["nyers_szoveg"] else "Üres (képalapú szkennelt PDF)")
 
     hely_opciok = {f"{r['megnevezes']} ({r['pod_eic_azonosito']}) [{r['jogosultsag']}]": int(r["id"]) for _, r in helyek_df.iterrows()}
     alap_index = 0
@@ -176,9 +209,6 @@ if menu == "🧾 Számla ellenőrzés és feltöltés":
     with c2:
         szolg_data = supabase.table("szolgaltatok").select("id, nev").order("nev").execute().data or []
         szolg_df = pd.DataFrame(szolg_data)
-        if szolg_df.empty:
-            st.error("Nincs szolgáltató az adatbázisban! Vegyél fel egyet a Supabase 'szolgaltatok' táblájában.")
-            st.stop()
         szolg_opciok = dict(zip(szolg_df["nev"], szolg_df["id"]))
         szolg_nev = st.selectbox("Szolgáltató", list(szolg_opciok.keys()))
         szolgaltato_id = int(szolg_opciok[szolg_nev])
@@ -195,40 +225,3 @@ if menu == "🧾 Számla ellenőrzés és feltöltés":
     elif feltoltott_fajl and feltoltott_fajl.name.lower().endswith(".xlsx"):
         alap_tetelek = pd.read_excel(feltoltott_fajl)
     elif feltoltott_fajl and feltoltott_fajl.name.lower().endswith(".csv"):
-        alap_tetelek = pd.read_csv(feltoltott_fajl)
-    else:
-        alap_tetelek = pd.DataFrame([
-            {"Megnevezés": "Energiadíj", "Mennyiség": 0.0, "Mértékegység": "kWh", "Nettó egységár": 0.0, "ÁFA (%)": 27.0}
-        ])
-
-    szerkesztett_df = st.data_editor(alap_tetelek, num_rows="dynamic", use_container_width=True)
-
-    osszes_netto = Decimal("0")
-    osszes_brutto = Decimal("0")
-    mentendo_tetelek = []
-
-    for _, row in szerkesztett_df.iterrows():
-        if pd.isna(row.get("Mennyiség")) or pd.isna(row.get("Nettó egységár")):
-            continue
-        menny = Decimal(str(row["Mennyiség"]))
-        ar = Decimal(str(row["Nettó egységár"]))
-        afa = Decimal(str(row.get("ÁFA (%)", 27.0)))
-
-        netto = (menny * ar).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-        brutto = (netto * (Decimal("1") + afa / Decimal("100"))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-
-        osszes_netto += netto
-        osszes_brutto += brutto
-        mentendo_tetelek.append({
-            "megnevezes": str(row.get("Megnevezés", "Díjtétel")),
-            "mennyiseg": float(menny),
-            "mertekegyseg": str(row.get("Mértékegység", "kWh")),
-            "egysegar": float(ar),
-            "netto": float(netto),
-            "afa": float(afa),
-            "brutto": float(brutto)
-        })
-
-    szamla_brutto_dec = Decimal(str(szamlan_brutto)).quantize(Decimal("0.01"))
-    elteres = abs(szamla_brutto_dec - osszes_brutto)
-
