@@ -43,7 +43,6 @@ def feldolgoz_pdf(feltoltott_fajl):
         "tetelek": []
     }
 
-    # 1. Számlaszám keresése (szövegből vagy fájlnévből)
     m_szamlaszam = re.search(r"Számla\s*sorszáma[:\s]+([A-Za-z0-9/-]{6,})", teljes_szoveg, re.IGNORECASE)
     if m_szamlaszam:
         adatok["szamlaszam"] = m_szamlaszam.group(1).strip()
@@ -52,7 +51,6 @@ def feldolgoz_pdf(feltoltott_fajl):
         if m_fajl:
             adatok["szamlaszam"] = m_fajl.group(1)
 
-    # 2. Dátumok keresése
     m_kelte = re.search(r"Számla\s*kelte[:\s]+(\d{4}\.\d{2}\.\d{2})", teljes_szoveg, re.IGNORECASE)
     if m_kelte:
         adatok["szamla_kelte"] = datetime.strptime(m_kelte.group(1), "%Y.%m.%d").date()
@@ -66,7 +64,6 @@ def feldolgoz_pdf(feltoltott_fajl):
         adatok["idoszak_tol"] = datetime.strptime(m_idoszak.group(1), "%Y.%m.%d").date()
         adatok["idoszak_ig"] = datetime.strptime(m_idoszak.group(2), "%Y.%m.%d").date()
 
-    # 3. Bruttó végösszeg keresése
     m_brutto = re.search(r"(?:Fizetendő\s*összeg|Számla\s*végösszege|Bruttó\s*összesen)[:\s]+([\d\.\s]+)\s*Ft", teljes_szoveg, re.IGNORECASE)
     if m_brutto:
         tiszta_szam = m_brutto.group(1).replace(".", "").replace(" ", "").replace(",", ".")
@@ -75,12 +72,10 @@ def feldolgoz_pdf(feltoltott_fajl):
         except ValueError:
             pass
 
-    # 4. POD / mérési pont azonosító keresése
     m_pod = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", teljes_szoveg)
     if m_pod:
         adatok["pod"] = m_pod.group(1).strip()
 
-    # 5. Díjtételek sorainak keresése (rugalmas táblázatos minta)
     tetel_minta = re.compile(
         r"([A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű\"'\(\)\-\s]{4,}?)\s+(?:\d{4}\.\d{2}\.\d{2}\s*[-–]\s*\d{4}\.\d{2}\.\d{2}\s+)?([\d\s\.,]+)\s+(kWh|hó|m3|MJ|db)\s+([\d\s\.,]+)\s*(?:Ft/\w+)?\s+[\d\s\.,]+\s+(\d{1,2})"
     )
@@ -151,7 +146,6 @@ def get_energetikus_helyei(uid: int):
                     latott_ids.add(h["id"])
     return pd.DataFrame(eredmeny)
 
-# --- FELÜLET INDÍTÁSA ---
 st.sidebar.title("⚡ Energia Portál")
 
 try:
@@ -166,7 +160,7 @@ if users_df.empty:
     st.stop()
 
 kivalasztott_nev = st.sidebar.selectbox("Belépett energetikus:", users_df["nev"])
-user_sor = users_df[users_df["nev"] == kivalasztott_nev].iloc
+user_sor = users_df[users_df["nev"] == kivalasztott_nev].iloc[0]
 user_id = int(user_sor["id"])
 st.sidebar.info(f"Szerepkör: **{user_sor['szerepkor']}**")
 
@@ -225,3 +219,9 @@ if menu == "🧾 Számla ellenőrzés és feltöltés":
     elif feltoltott_fajl and feltoltott_fajl.name.lower().endswith(".xlsx"):
         alap_tetelek = pd.read_excel(feltoltott_fajl)
     elif feltoltott_fajl and feltoltott_fajl.name.lower().endswith(".csv"):
+        alap_tetelek = pd.read_csv(feltoltott_fajl)
+    else:
+        alap_tetelek = pd.DataFrame([
+            {"Megnevezés": "Energiadíj", "Mennyiség": 0.0, "Mértékegység": "kWh", "Nettó egységár": 0.0, "ÁFA (%)": 27.0}
+        ])
+
