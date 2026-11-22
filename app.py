@@ -64,6 +64,7 @@ def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
         kep = oldal.get_pixmap(dpi=150)
         st.image(kep.tobytes("png"), caption=f"{idx + 1}. oldal", use_container_width=True)
     st.download_button("📥 PDF letöltése a gépre", data=pdf_bytes, file_name=pdf_utvonal, mime="application/pdf")
+
 def _hu_szam(szoveg):
     if not szoveg:
         return None
@@ -97,10 +98,10 @@ def _vizszintes_sorok(oldal):
         return list()
     rendezett = sorted(szavak, key=lambda w: (round(w[1] / 3.0), w[0]))
     sorok = list()
-    _, akt_y, _, _, _, *_ = rendezett[0]
+    akt_y = rendezett[0][1]
     akt_szavak = list()
     for w in rendezett:
-        x0, y0, _, _, szo, *_ = w
+        x0, y0, szo = w[0], w[1], w[4]
         if abs(y0 - akt_y) <= 3.5:
             akt_szavak.append((x0, szo))
         else:
@@ -233,14 +234,13 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
             netto_ertek = szamok[-1]
             talalatok.append({"Megnevezés": nev, "Mennyiség": 1.0, "Mértékegység": "db", "Nettó egységár": netto_ertek, "ÁFA (%)": 27.0})
         elif len(szamok) >= 2:
-            menny = szamok
-            ar = szamok
+            menny = szamok[0]
+            ar = szamok[1]
             talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": akt_me, "Nettó egységár": ar, "ÁFA (%)": akt_afa})
 
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
-
 
 def feldolgoz_pdf(fajl):
     pdf_bytes = fajl.read()
@@ -334,40 +334,49 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl):
     except Exception as hiba:
         st.error(f"Pontos hiba oka: {hiba}")
 
-def mutat_torzsadatok():
-    st.header("⚙️ Törzsadatok és Helyettesítések kezelése")
+def mutat_helyettesitesek():
+    st.header("🔄 Helyettesítések kezelése")
     osszes_user = supabase.table("energetikusok").select("*").order("nev").execute().data or list()
     u_map = {u["id"]: u["nev"] for u in osszes_user}
     aktiv_user_opciok = {f"{u['nev']} ({u['szerepkor']})": u["id"] for u in osszes_user if u.get("aktiv")}
     osszes_hely = supabase.table("felhasznalasi_helyek").select("*").order("megnevezes").execute().data or list()
     h_map = {h["id"]: h["megnevezes"] for h in osszes_hely}
 
-    t_helyett, t_hely, t_user = st.tabs(list(("🔄 Helyettesítések", "🏭 Felhasználási helyek", "👤 Energetikusok")))
-    with t_helyett:
-        helyett_lista = supabase.table("helyettesitesek").select("*").order("kezdet_datum", desc=True).execute().data or list()
-        if helyett_lista:
-            h_sorok = list({"ID": x["id"], "Helyettesített": u_map.get(x["helyettesitett_energetikus_id"], ""), "Helyettesítő": u_map.get(x["helyettesito_energetikus_id"], ""), "Felhasználási hely": h_map.get(x["felhasznalasi_hely_id"], "Minden telephelye"), "Kezdet": x["kezdet_datum"], "Vége": x["vege_datum"]} for x in helyett_lista)
-            st.dataframe(pd.DataFrame(h_sorok), use_container_width=True, hide_index=True)
-            torol_h = st.selectbox("Helyettesítés törlése:", list(f"#{x['id']} – {u_map.get(x['helyettesitett_energetikus_id'], '')} -> {u_map.get(x['helyettesito_energetikus_id'], '')}" for x in helyett_lista))
-            if st.button("🗑️ Kiválasztott helyettesítés törlése"):
-                hid = int(next(iter(torol_h.split(" – "))).replace("#", ""))
-                supabase.table("helyettesitesek").delete().eq("id", hid).execute()
+    helyett_lista = supabase.table("helyettesitesek").select("*").order("kezdet_datum", desc=True).execute().data or list()
+    if helyett_lista:
+        h_sorok = list({"ID": x["id"], "Helyettesített": u_map.get(x["helyettesitett_energetikus_id"], ""), "Helyettesítő": u_map.get(x["helyettesito_energetikus_id"], ""), "Felhasználási hely": h_map.get(x["felhasznalasi_hely_id"], "Minden telephelye"), "Kezdet": x["kezdet_datum"], "Vége": x["vege_datum"]} for x in helyett_lista)
+        st.dataframe(pd.DataFrame(h_sorok), use_container_width=True, hide_index=True)
+        torol_h = st.selectbox("Helyettesítés törlése:", list(f"#{x['id']} – {u_map.get(x['helyettesitett_energetikus_id'], '')} -> {u_map.get(x['helyettesito_energetikus_id'], '')}" for x in helyett_lista))
+        if st.button("🗑️ Kiválasztott helyettesítés törlése"):
+            hid = int(next(iter(torol_h.split(" – "))).replace("#", ""))
+            supabase.table("helyettesitesek").delete().eq("id", hid).execute()
+            st.rerun()
+
+    st.subheader("➕ Új helyettesítés rögzítése")
+    with st.form("uj_helyettesites_form"):
+        hc1, hc2 = st.columns(2)
+        kit = hc1.selectbox("Helyettesített energetikus:", list(aktiv_user_opciok.keys()))
+        kivel = hc2.selectbox("Helyettesítő energetikus:", list(aktiv_user_opciok.keys()))
+        hely_valasztek = {"Minden telephelyére érvényes": None}
+        for h in osszes_hely:
+            hely_valasztek[f"{h['megnevezes']} ({h['pod_eic_azonosito']})"] = h["id"]
+        melyik_hely = st.selectbox("Érintett felhasználási hely:", list(hely_valasztek.keys()))
+        hd1, hd2 = st.columns(2)
+        h_tol = hd1.date_input("Kezdet", value=date.today())
+        h_ig = hd2.date_input("Vége", value=date.today())
+        if st.form_submit_button("💾 Helyettesítés mentése", type="primary"):
+            if aktiv_user_opciok[kit] != aktiv_user_opciok[kivel] and h_tol <= h_ig:
+                supabase.table("helyettesitesek").insert({"helyettesitett_energetikus_id": aktiv_user_opciok[kit], "helyettesito_energetikus_id": aktiv_user_opciok[kivel], "felhasznalasi_hely_id": hely_valasztek[melyik_hely], "kezdet_datum": h_tol.isoformat(), "vege_datum": h_ig.isoformat(), "aktiv": True}).execute()
                 st.rerun()
-        with st.form("uj_helyettesites_form"):
-            hc1, hc2 = st.columns(2)
-            kit = hc1.selectbox("Helyettesített energetikus:", list(aktiv_user_opciok.keys()))
-            kivel = hc2.selectbox("Helyettesítő energetikus:", list(aktiv_user_opciok.keys()))
-            hely_valasztek = {"Minden telephelyére érvényes": None}
-            for h in osszes_hely:
-                hely_valasztek[f"{h['megnevezes']} ({h['pod_eic_azonosito']})"] = h["id"]
-            melyik_hely = st.selectbox("Érintett felhasználási hely:", list(hely_valasztek.keys()))
-            hd1, hd2 = st.columns(2)
-            h_tol = hd1.date_input("Kezdet", value=date.today())
-            h_ig = hd2.date_input("Vége", value=date.today())
-            if st.form_submit_button("💾 Helyettesítés mentése", type="primary"):
-                if aktiv_user_opciok[kit] != aktiv_user_opciok[kivel] and h_tol <= h_ig:
-                    supabase.table("helyettesitesek").insert({"helyettesitett_energetikus_id": aktiv_user_opciok[kit], "helyettesito_energetikus_id": aktiv_user_opciok[kivel], "felhasznalasi_hely_id": hely_valasztek[melyik_hely], "kezdet_datum": h_tol.isoformat(), "vege_datum": h_ig.isoformat(), "aktiv": True}).execute()
-                    st.rerun()
+
+def mutat_torzsadatok():
+    st.header("⚙️ Törzsadatok kezelése")
+    osszes_user = supabase.table("energetikusok").select("*").order("nev").execute().data or list()
+    u_map = {u["id"]: u["nev"] for u in osszes_user}
+    aktiv_user_opciok = {f"{u['nev']} ({u['szerepkor']})": u["id"] for u in osszes_user if u.get("aktiv")}
+    osszes_hely = supabase.table("felhasznalasi_helyek").select("*").order("megnevezes").execute().data or list()
+
+    t_hely, t_user = st.tabs(list(("🏭 Felhasználási helyek", "👤 Energetikusok")))
     with t_hely:
         energia_opciok = list(("Villamos energia", "Földgáz", "Távhő", "Víziközmű", "PB-gáz"))
         if osszes_hely:
@@ -491,6 +500,7 @@ def mutat_torzsadatok():
                         st.rerun()
                     else:
                         st.info("Nem történt változás a kiosztásban.")
+
 def mutat_kimutatasok():
     st.header("Rögzített számlák és havi kimutatások")
     lista = supabase.table("szamlak").select("*").order("jovahagyas_ideje", desc=True).execute().data or list()
@@ -573,6 +583,7 @@ def mutat_kimutatasok():
             ea_df["Szumma nettó egységár (Ft/kWh)"] = (ea_df["Nettó"] / ea_df["kWh"]).round(2)
             ea_sorrend = sorted(list(ea_df["Elszámolási hónap"].unique()), key=honap_kulcs)
             st.altair_chart(alt.Chart(ea_df).mark_bar().encode(x=alt.X("Elszámolási hónap:N", sort=ea_sorrend, axis=alt.Axis(labelAngle=0, title="Elszámolási hónap")), y=alt.Y("Szumma nettó egységár (Ft/kWh):Q", axis=alt.Axis(title="Szumma nettó egységár (Ft/kWh)")), color=alt.Color("Felhasználási hely:N", title="Felhasználási hely"), xOffset="Felhasználási hely:N", tooltip=[alt.Tooltip("Elszámolási hónap:N"), alt.Tooltip("Felhasználási hely:N"), alt.Tooltip("Szumma nettó egységár (Ft/kWh):Q", format=",.2f")]).properties(height=360), use_container_width=True)
+
     with tab_tetel:
         szamla_map = {s["id"]: s for s in szurt_lista}
         if not osszes_tetel:
@@ -727,10 +738,12 @@ valasztott_nev = st.sidebar.selectbox("Belépett energetikus:", list(users_map.k
 user_sor = users_map[valasztott_nev]
 st.sidebar.info(f"Szerepkör: **{user_sor['szerepkor']}**")
 
-menu = st.sidebar.radio("Menü", list(("🧾 Számla ellenőrzés és feltöltés", "📊 Kimutatások és Riportok", "⚙️ Törzsadatok és Helyettesítések")), on_change=urit_urlap)
+menu = st.sidebar.radio("Menü", list(("🧾 Számla ellenőrzés és feltöltés", "📊 Kimutatások és Riportok", "🔄 Helyettesítések", "⚙️ Törzsadatok")), on_change=urit_urlap)
 if menu == "🧾 Számla ellenőrzés és feltöltés":
     mutat_szamla_rogzites(int(user_sor["id"]))
 elif menu == "📊 Kimutatások és Riportok":
     mutat_kimutatasok()
+elif menu == "🔄 Helyettesítések":
+    mutat_helyettesitesek()
 else:
     mutat_torzsadatok()
