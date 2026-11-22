@@ -84,6 +84,7 @@ def _hu_szam(szoveg):
         return None
 
 
+
 SZOLGALTATO_SABLONOK = {
     "ALTEO": {
         "azonositok": ("alteo energiakereskedő", "17783893"),
