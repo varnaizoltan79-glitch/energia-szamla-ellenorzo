@@ -108,7 +108,8 @@ def feldolgoz_xml(fajl):
     gyoker = ET.fromstring(szoveg)
     for elem in gyoker.iter():
         if "}" in elem.tag:
-            elem.tag = elem.tag.split("}", 1)
+            elem.tag = elem.tag.split("}", 1)[-1]
+
 
     def elso_ertek(csomopont, tagek):
         celok = set(t.lower() for t in tagek)
