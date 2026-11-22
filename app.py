@@ -389,3 +389,4 @@ if col_gomb.button("🗑️ Új számla / Ürítés"):
     st.rerun()
 
 if "utolso_mentes" in st.session_state:
+    st.success(st.session_state.pop("utolso_mentes"))
