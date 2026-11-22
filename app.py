@@ -1083,7 +1083,7 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
 
     szamla_idk = list(s["id"] for s in szurt_lista)
     osszes_tetel = supabase.table("szamla_tetelek").select("*").in_("szamla_id", szamla_idk).execute().data or list()
-        netto_per_szamla = dict()
+    netto_per_szamla = dict()
     fogyasztas_per_szamla = dict()
     fogyasztas_me_per_szamla = dict()
     tartalek_m3_per_szamla = dict()
