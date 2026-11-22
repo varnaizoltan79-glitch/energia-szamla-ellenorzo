@@ -365,53 +365,83 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         if br_val:
             adat["brutto"] = int(round(br_val))
 
-    osszes_sor = list()
-    for oldal in dok:
-        osszes_sor.extend(_vizszintes_sorok(oldal))
-
-    kezd_i = next((i for i, s in enumerate(osszes_sor) if "SZÁMLARÉSZLETEZŐ" in s.upper()), 0)
-    veg_i = next((i for i, s in enumerate(osszes_sor[kezd_i:], start=kezd_i) if "BRUTTÓ SZÁMLAÉRTÉK" in s.upper() or "ÁFA ÖSSZESÍTŐ" in s.upper()), len(osszes_sor))
-    reszletezo_sorok = osszes_sor[kezd_i:veg_i]
-
-    szam_minta = r"-?\d[\d\s\xa0]*(?:[.,]\d+)?"
+    egyes_szam = r"-?\d{1,3}(?: \d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?"
     me_minta = r"(m3|m³|hó|db|kWh|MWh)"
-    tetel_minta = re.compile(rf"({szam_minta})\s*{me_minta}\s+({szam_minta})\s*Ft\s+({szam_minta})\s+(27|5|18|0|AHK)\b")
-    kizaro = ("tétel megnevezése", "elszámolt", "mérőállás", "nettó egységár", "kerekítés", "bruttó számlaérték", "fizetendő", "számlarészletező", "árszabás")
-
-    def _tiszta_vizmu_szoveg(sor_szoveg):
-        t = re.sub(r"\d{4}\.\d{2}\.\d{2}\s*[-–]\s*\d{4}\.\d{2}\.\d{2}", "", sor_szoveg)
-        t = re.sub(r"\b\d+\s*[-–]\s*\d+\b", "", t)
-        return re.sub(r"\s{2,}", " ", t).strip(" -–:|")
+    tetel_minta = re.compile(rf"(?:^|\s{{2,}})({egyes_szam})\s*{me_minta}\s+({egyes_szam})\s*Ft\s+({egyes_szam})\s+(27|5|18|0|AHK)\b")
 
     talalatok = list()
-    for idx, s in enumerate(reszletezo_sorok):
-        m = tetel_minta.search(s)
-        if not m:
+    for oldal in dok:
+        oldal_szoveg = oldal.get_text("text") or ""
+        if "SZÁMLARÉSZLETEZŐ" not in oldal_szoveg.upper():
             continue
-        menny = _hu_szam(m.group(1))
-        me = m.group(2).replace("m³", "m3")
-        ar = _hu_szam(m.group(3))
-        afa_nyers = m.group(5)
-        afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
 
-        nev_reszek = list()
-        if idx > 0:
-            elozo = _tiszta_vizmu_szoveg(reszletezo_sorok[idx - 1])
-            if elozo and not tetel_minta.search(reszletezo_sorok[idx - 1]) and not any(k in elozo.lower() for k in kizaro):
-                nev_reszek.append(elozo)
+        szavak = oldal.get_text("words")
+        if not szavak:
+            continue
 
-        kozepso = _tiszta_vizmu_szoveg(s[:m.start()])
-        if kozepso and not any(k in kozepso.lower() for k in kizaro):
-            nev_reszek.append(kozepso)
+        y_fejlec = max((w[3] for w in szavak if w[4] in ("megnevezése", "díj", "időszak") and w[1] < 450), default=240.0)
+        y_vege = min((w[1] for w in szavak if w[4] in ("Kerekítés", "Bruttó", "Fizetendő") and w[1] > y_fejlec + 20 and w[0] < 200), default=600.0)
+        x_idoszak_hatar = min((w[0] for w in szavak if re.match(r"^\d{4}\.\d{2}\.\d{2}", w[4]) and y_fejlec < w[1] < y_vege), default=205.0)
 
-        if idx + 1 < len(reszletezo_sorok):
-            kov = _tiszta_vizmu_szoveg(reszletezo_sorok[idx + 1])
-            if kov and not tetel_minta.search(reszletezo_sorok[idx + 1]) and not any(k in kov.lower() for k in kizaro):
-                nev_reszek.append(kov)
+        sorok_y = list()
+        rendezett = sorted(szavak, key=lambda w: (round(w[1] / 3.0), w[0]))
+        _, akt_y, *_ = next(iter(rendezett))
+        akt_szavak = list()
+        for w in rendezett:
+            x0, y0, x1, _, szo = w[:5]
+            if abs(y0 - akt_y) <= 3.5:
+                akt_szavak.append((x0, x1, szo))
+            else:
+                akt_szavak.sort(key=lambda item: item[0])
+                reszek = list()
+                elozo_x1 = None
+                for sx0, sx1, sszo in akt_szavak:
+                    if elozo_x1 is not None:
+                        reszek.append("  " if (sx0 - elozo_x1) > 8.5 else " ")
+                    reszek.append(sszo)
+                    elozo_x1 = sx1
+                sorok_y.append((akt_y, "".join(reszek)))
+                akt_y = y0
+                akt_szavak = [(x0, x1, szo)]
+        if akt_szavak:
+            akt_szavak.sort(key=lambda item: item[0])
+            reszek = list()
+            elozo_x1 = None
+            for sx0, sx1, sszo in akt_szavak:
+                if elozo_x1 is not None:
+                    reszek.append("  " if (sx0 - elozo_x1) > 8.5 else " ")
+                reszek.append(sszo)
+                elozo_x1 = sx1
+            sorok_y.append((akt_y, "".join(reszek)))
 
-        nev = " ".join(nev_reszek).replace("- ", "-").strip() or "Víziközmű díjtétel"
-        if menny is not None and ar is not None:
-            talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
+        horgonyok = list()
+        for y_val, sor_sz in sorok_y:
+            if not (y_fejlec < y_val < y_vege):
+                continue
+            m = tetel_minta.search(sor_sz)
+            if m:
+                menny = _hu_szam(m.group(1))
+                me = m.group(2).replace("m³", "m3")
+                ar = _hu_szam(m.group(3))
+                afa_nyers = m.group(5)
+                afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
+                horgonyok.append({"y": y_val, "menny": menny, "me": me, "ar": ar, "afa": afa, "szavak": list()})
+
+        if not horgonyok:
+            continue
+
+        bal_szavak = list(w for w in szavak if y_fejlec < w[1] < y_vege and w[2] <= x_idoszak_hatar - 2.0)
+        for w in bal_szavak:
+            x0, y0, _, _, szo = w[:5]
+            legkozelebbi = min(horgonyok, key=lambda h: abs(h["y"] - y0))
+            if abs(legkozelebbi["y"] - y0) <= 22.0:
+                legkozelebbi["szavak"].append((round(y0 / 4.0), x0, szo))
+
+        for h in horgonyok:
+            h["szavak"].sort(key=lambda item: (item[0], item[1]))
+            nev = " ".join(item[2] for item in h["szavak"]).replace("- ", "-").strip() or "Víziközmű díjtétel"
+            if h["menny"] is not None and h["ar"] is not None:
+                talalatok.append({"Megnevezés": nev, "Mennyiség": h["menny"], "Mértékegység": h["me"], "Nettó egységár": h["ar"], "ÁFA (%)": h["afa"]})
 
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
