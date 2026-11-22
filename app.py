@@ -429,9 +429,9 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
     adat["brutto"] = pod_adatok[elso_pod]["brutto"]
-        adat["tol"] = pod_adatok[elso_pod]["tol"]
-        adat["ig"] = pod_adatok[elso_pod]["ig"]
-        adat["tetelek_df"] = pod_adatok[elso_pod]["tetelek_df"]
+    adat["tol"] = pod_adatok[elso_pod]["tol"]
+    adat["ig"] = pod_adatok[elso_pod]["ig"]
+    adat["tetelek_df"] = pod_adatok[elso_pod]["tetelek_df"]
     return adat
 
 
