@@ -536,7 +536,7 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
     egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?"
     me_minta = r"(kW|MW|GJ|db|lm3|m3|m³|kWh|MWh|hó)"
     ido_oszlop_minta = r"(?:\d{4}\.\d{2}\.\d{2}\s*[-–]?\s*\d{4}\.\d{2}\.\d{2}|\d{4}\.\d{2}\s*hó|\d{4}\.\d{2})"
-    tetel_minta = re.compile(rf"^(.+?)\s+{ido_oszlop_minta}\s+({egyes_szam})\s+({egyes_szam})\s*{me_minta}\s+({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?\s+({egyes_szam})(?:\s+(27|5|18|0|AHK)\b)?")
+    tetel_minta = re.compile(rf"^(.+?)\s+{ido_oszlop_minta}\s+({egyes_szam})\s+({egyes_szam})\s*{me_minta}\s*({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?\s+({egyes_szam})(?:\s+(27|5|18|0|AHK)\b)?")
     talalatok = list()
 
     for s in osszes_sor[kezd_i:veg_i]:
