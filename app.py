@@ -91,8 +91,13 @@ SZOLGALTATO_SABLONOK = {
     "MVM": {
         "azonositok": ("mvm next", "26713111", "mvmenergiakereskedo"),
         "szolgaltato_nev_kulcs": "MVM",
+    },
+    "VIZMU": {
+        "azonositok": ("debreceni vízmű", "23458208"),
+        "szolgaltato_nev_kulcs": "vízmű",
     }
 }
+
 
 def _vizszintes_sorok(oldal):
     szavak = oldal.get_text("words")
@@ -331,6 +336,87 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
 
 
 
+def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
+    adat["szolgaltato_kulcs"] = "vízmű"
+    m_sz = re.search(r"Számla\s*sorszáma\s*:?\s*([A-Z0-9/-]{6,})", szoveg, re.I)
+    if m_sz:
+        adat["szamlaszam"] = m_sz.group(1).strip()
+
+    m_az = re.search(r"Azonosító\s*:?\s*(\d{5,}-\d{5,})", szoveg)
+    if m_az and not adat["pod"]:
+        adat["pod"] = m_az.group(1).strip()
+
+    m_ido = re.search(r"Elszámolási\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–.]+\s*(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
+    if m_ido:
+        adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
+        adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
+
+    m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", szoveg, re.I)
+    if m_k:
+        adat["kelte"] = date(int(m_k.group(1)), int(m_k.group(2)), int(m_k.group(3)))
+
+    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", szoveg, re.I)
+    if m_h:
+        adat["hatarido"] = date(int(m_h.group(1)), int(m_h.group(2)), int(m_h.group(3)))
+
+    m_br = re.search(r"Fizetendő\s*összeg\s*:?\s*([\d\s\xa0]+)\s*Ft", szoveg, re.I)
+    if m_br:
+        br_val = _hu_szam(m_br.group(1))
+        if br_val:
+            adat["brutto"] = int(round(br_val))
+
+    osszes_sor = list()
+    for oldal in dok:
+        osszes_sor.extend(_vizszintes_sorok(oldal))
+
+    kezd_i = next((i for i, s in enumerate(osszes_sor) if "SZÁMLARÉSZLETEZŐ" in s.upper()), 0)
+    veg_i = next((i for i, s in enumerate(osszes_sor[kezd_i:], start=kezd_i) if "BRUTTÓ SZÁMLAÉRTÉK" in s.upper() or "ÁFA ÖSSZESÍTŐ" in s.upper()), len(osszes_sor))
+    reszletezo_sorok = osszes_sor[kezd_i:veg_i]
+
+    szam_minta = r"-?\d[\d\s\xa0]*(?:[.,]\d+)?"
+    me_minta = r"(m3|m³|hó|db|kWh|MWh)"
+    tetel_minta = re.compile(rf"({szam_minta})\s*{me_minta}\s+({szam_minta})\s*Ft\s+({szam_minta})\s+(27|5|18|0|AHK)\b")
+    kizaro = ("tétel megnevezése", "elszámolt", "mérőállás", "nettó egységár", "kerekítés", "bruttó számlaérték", "fizetendő", "számlarészletező", "árszabás")
+
+    def _tiszta_vizmu_szoveg(sor_szoveg):
+        t = re.sub(r"\d{4}\.\d{2}\.\d{2}\s*[-–]\s*\d{4}\.\d{2}\.\d{2}", "", sor_szoveg)
+        t = re.sub(r"\b\d+\s*[-–]\s*\d+\b", "", t)
+        return re.sub(r"\s{2,}", " ", t).strip(" -–:|")
+
+    talalatok = list()
+    for idx, s in enumerate(reszletezo_sorok):
+        m = tetel_minta.search(s)
+        if not m:
+            continue
+        menny = _hu_szam(m.group(1))
+        me = m.group(2).replace("m³", "m3")
+        ar = _hu_szam(m.group(3))
+        afa_nyers = m.group(5)
+        afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
+
+        nev_reszek = list()
+        if idx > 0:
+            elozo = _tiszta_vizmu_szoveg(reszletezo_sorok[idx - 1])
+            if elozo and not tetel_minta.search(reszletezo_sorok[idx - 1]) and not any(k in elozo.lower() for k in kizaro):
+                nev_reszek.append(elozo)
+
+        kozepso = _tiszta_vizmu_szoveg(s[:m.start()])
+        if kozepso and not any(k in kozepso.lower() for k in kizaro):
+            nev_reszek.append(kozepso)
+
+        if idx + 1 < len(reszletezo_sorok):
+            kov = _tiszta_vizmu_szoveg(reszletezo_sorok[idx + 1])
+            if kov and not tetel_minta.search(reszletezo_sorok[idx + 1]) and not any(k in kov.lower() for k in kizaro):
+                nev_reszek.append(kov)
+
+        nev = " ".join(nev_reszek).replace("- ", "-").strip() or "Víziközmű díjtétel"
+        if menny is not None and ar is not None:
+            talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
+
+    if talalatok:
+        adat["tetelek_df"] = pd.DataFrame(talalatok)
+    return adat
+
 def feldolgoz_pdf(fajl):
     pdf_bytes = fajl.read()
     dok = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -349,6 +435,8 @@ def feldolgoz_pdf(fajl):
         return _feldolgoz_alteo_pdf(dok, szoveg, adat)
     if any(az in szoveg_low for az in SZOLGALTATO_SABLONOK["MVM"]["azonositok"]):
         return _feldolgoz_mvm_pdf(dok, szoveg, adat)
+    if any(az in szoveg_low for az in SZOLGALTATO_SABLONOK["VIZMU"]["azonositok"]):
+        return _feldolgoz_vizmu_pdf(dok, szoveg, adat)
 
     m = re.search(r"(?:Számla\s*sorszáma|Számlaszám|Bizonylat\s*sorszáma)[:\s]+([A-Za-z0-9/-]{5,})", szoveg, re.I)
     if m: adat["szamlaszam"] = m.group(1).strip()
@@ -367,6 +455,7 @@ def feldolgoz_pdf(fajl):
         if br_val:
             adat["brutto"] = int(round(br_val))
     return adat
+
 
 def get_helyek(uid):
     ma = date.today().isoformat()
