@@ -177,8 +177,6 @@ def feldolgoz_xml(fajl):
     if sorok:
         adat["tetelek_df"] = pd.DataFrame(sorok)
     return adat
-
-
 def get_helyek(uid):
     ma = date.today().isoformat()
     helyek = supabase.table("felhasznalasi_helyek").select("*").eq("aktiv", True).execute().data or list()
@@ -285,7 +283,6 @@ def mutat_torzsadatok():
             if st.form_submit_button("💾 Felhasználási hely mentése", type="primary") and uj_h_nev.strip() and uj_h_pod.strip():
                 supabase.table("felhasznalasi_helyek").insert({"megnevezes": uj_h_nev.strip(), "energiatipus": uj_h_energia, "pod_eic_azonosito": uj_h_pod.strip(), "felelos_energetikus_id": fel_opc[uj_h_fel], "allando_helyettes_id": fel_opc[uj_h_helyett], "aktiv": True}).execute()
                 st.rerun()
-
     with t_user:
         if osszes_user:
             st.dataframe(pd.DataFrame(list({"ID": u["id"], "Név": u["nev"], "Szerepkör": u["szerepkor"], "Státusz": "Aktív" if u.get("aktiv") else "Inaktív"} for u in osszes_user)), use_container_width=True, hide_index=True)
@@ -396,7 +393,6 @@ def mutat_torzsadatok():
                         st.rerun()
                     else:
                         st.info("Nem történt változás a kiosztásban.")
-
 def mutat_kimutatasok():
     st.header("Rögzített számlák és havi kimutatások")
     lista = supabase.table("szamlak").select("*").order("jovahagyas_ideje", desc=True).execute().data or list()
@@ -542,7 +538,6 @@ def mutat_kimutatasok():
 
     st.divider()
     st.subheader("🗑️ Számla törlése")
-
 def mutat_szamla_rogzites(user_id):
     fv = st.session_state["form_ver"]
     col_fej, col_gomb = st.columns((4, 1))
