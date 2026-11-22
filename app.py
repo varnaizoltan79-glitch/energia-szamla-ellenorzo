@@ -672,7 +672,7 @@ def mutat_torzsadatok():
                 else:
                     st.info("Nem történt változás a táblázatban.")
 
-        with st.expander("➕ Új felhasználási hely hozzáadása"):
+                with st.expander("➕ Új felhasználási hely hozzáadása"):
             with st.form("uj_hely_form"):
                 fc1, fc2, fc3 = st.columns(3)
                 uj_h_nev = fc1.text_input("Megnevezés:")
@@ -683,7 +683,7 @@ def mutat_torzsadatok():
                 fc4, fc5 = st.columns(2)
                 uj_h_fel = fc4.selectbox("Felelős energetikus:", list(fel_opc.keys()))
                 uj_h_helyett = fc5.selectbox("Állandó helyettes:", list(fel_opc.keys()))
-                    if st.form_submit_button("💾 Új felhasználási hely mentése", type="primary") and uj_h_nev.strip() and uj_h_pod.strip():
+                if st.form_submit_button("💾 Új felhasználási hely mentése", type="primary") and uj_h_nev.strip() and uj_h_pod.strip():
                     tisztitott_pod = uj_h_pod.strip()
                     letezo_h = next((h for h in osszes_hely if str(h.get("pod_eic_azonosito") or "").strip().lower() == tisztitott_pod.lower()), None)
                     if letezo_h:
@@ -697,6 +697,7 @@ def mutat_torzsadatok():
                                 st.warning("⚠️ Meglévő felhasználási hely: ezzel a POD / EIC azonosítóval már rögzítve van telephely a rendszerben!")
                             else:
                                 st.error(f"Adatbázis hiba: {hiba}")
+
 
         if osszes_hely:
             st.divider()
