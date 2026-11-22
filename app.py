@@ -96,15 +96,10 @@ SZOLGALTATO_SABLONOK = {
         "azonositok": ("debreceni vízmű", "23458208", "tiszamenti regionális vízművek", "11265832", "trvzrt.hu", "érv. zrt", "érv zrt", "11069186", "ervzrt.hu", "nyírségvíz", "11492809", "nyirsegviz.hu", "drv zrt", "dunántúli regionális vízmű", "11226002", "drv.hu"),
         "szolgaltato_nev_kulcs": "vízmű",
     },
-    "TAVHO": {
-        "azonositok": ("debreceni hőszolgáltató", "23506088", "dhrt.hu", "távhőszolgáltatási számla"),
-        "szolgaltato_nev_kulcs": "hőszolgáltató",
+        "TAVHO": {
+        "azonositok": ("debreceni hőszolgáltató", "23506088", "dhrt.hu", "távhőszolgáltatási számla", "nyírtávhő", "nyíregyházi távhőszolgáltató", "11241256", "nyirtavho.hu", "távhőszolgáltatási részszámla"),
+        "szolgaltato_nev_kulcs": "távhő",
     }
-}
-
-
-
-
 
 
 def _vizszintes_sorok(oldal):
@@ -476,28 +471,46 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
     return adat
 
 def _feldolgoz_tavho_pdf(dok, szoveg, adat):
-    adat["szolgaltato_kulcs"] = "hőszolgáltató"
+    szoveg_low = szoveg.lower()
+    if "nyírtávhő" in szoveg_low or "nyíregyházi távhő" in szoveg_low or "11241256" in szoveg_low or "nyirtavho" in szoveg_low:
+        adat["szolgaltato_kulcs"] = "nyírtávhő"
+    else:
+        adat["szolgaltato_kulcs"] = "debreceni hőszolgáltató"
+
     osszes_sor = list()
     for oldal in dok:
         osszes_sor.extend(_vizszintes_sorok(oldal))
     rendezett_szoveg = "\n".join(osszes_sor)
 
-    m_sz = re.search(r"Számla\s*sorszáma\s*:?\s*([A-Z0-9/-]{6,})", rendezett_szoveg, re.I)
+    m_sz = re.search(r"Számla\s*sorszáma\s*:?\s*([A-Z0-9/-]{5,})", rendezett_szoveg, re.I)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
 
-        m_az = re.search(r"(U\d{5,}\s*-\s*F\d{4,})", szoveg, re.I)
-    m_hk = re.search(r"Hőközpont\s*azonosító\s*:?\s*([A-Z0-9-]+)", szoveg, re.I)
-    if m_az:
-        adat["pod"] = re.sub(r"\s*-\s*", " - ", m_az.group(1).strip()).upper()
+    m_az_nyir = re.search(r"Felhasználó\s*azonosító\s*száma\s*:?\s*([A-Z0-9]{4,})\b", rendezett_szoveg, re.I)
+    m_az_dhrt = re.search(r"(U\d{5,}\s*-\s*F\d{4,})", szoveg, re.I)
+    m_hk = re.search(r"Hőközpont\s*azonosító\s*:?\s*([A-Z0-9:/-]+)", rendezett_szoveg, re.I)
+    if m_az_dhrt:
+        adat["pod"] = re.sub(r"\s+", "", m_az_dhrt.group(1)).upper()
+    elif m_az_nyir:
+        adat["pod"] = m_az_nyir.group(1).strip()
     elif m_hk:
         adat["pod"] = m_hk.group(1).strip()
 
-
-    m_ido = re.search(r"(?:Elszámolási|Elszámolt)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–.]+\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
-    if m_ido:
-        adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
-        adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
+    m_ido_teljes = re.search(r"(?:Elszámolási|Elszámolt)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–.]+\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
+    m_ido_rovid = re.search(r"(?:Elszámolási|Elszámolt)\s*időszak\s*:?\s*(\d{2})\.(\d{2})\.(\d{2})\s*[-–.]+\s*(\d{2})\.(\d{2})\.(\d{2})", rendezett_szoveg, re.I)
+    m_ido_ho = re.search(r"(?:Elszámolási|Elszámolt)\s*időszak\s*:?\s*(\d{4})\.(\d{2})(?!\.\d)", rendezett_szoveg, re.I)
+    if m_ido_teljes:
+        adat["tol"] = datetime.strptime(m_ido_teljes.group(1), "%Y.%m.%d").date()
+        adat["ig"] = datetime.strptime(m_ido_teljes.group(2), "%Y.%m.%d").date()
+    elif m_ido_rovid:
+        adat["tol"] = date(2000 + int(m_ido_rovid.group(1)), int(m_ido_rovid.group(2)), int(m_ido_rovid.group(3)))
+        adat["ig"] = date(2000 + int(m_ido_rovid.group(4)), int(m_ido_rovid.group(5)), int(m_ido_rovid.group(6)))
+    elif m_ido_ho:
+        ev_h, ho_h = int(m_ido_ho.group(1)), int(m_ido_ho.group(2))
+        adat["tol"] = date(ev_h, ho_h, 1)
+        kov_ev = ev_h + 1 if ho_h == 12 else ev_h
+        kov_ho = 1 if ho_h == 12 else ho_h + 1
+        adat["ig"] = date(kov_ev, kov_ho, 1) - pd.Timedelta(days=1)
 
     m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", rendezett_szoveg, re.I)
     if m_k:
@@ -518,11 +531,11 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
     kezd_i = next((i for i, s in enumerate(osszes_sor) if "SZÁMLARÉSZLETEZŐ" in re.sub(r"\s+", "", s.upper())), 0)
     veg_i = next((i for i, s in enumerate(osszes_sor[kezd_i:], start=kezd_i) if "BRUTTÓ SZÁMLAÉRTÉK" in s.upper() or "SZÁMLA ÁFA ÖSSZESÍTŐJE" in s.upper()), len(osszes_sor))
 
-
     kategoria = ""
     egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?"
-    me_minta = r"(kW|GJ|db|lm3|m3|m³|kWh|MWh|hó)"
-    tetel_minta = re.compile(rf"^(.+?)\s+\d{{4}}\.\d{{2}}\.\d{{2}}\s+\d{{4}}\.\d{{2}}\.\d{{2}}\s+({egyes_szam})\s+({egyes_szam})\s*{me_minta}\s+({egyes_szam})\s*Ft\s+({egyes_szam})\s+(27|5|18|0|AHK)\b")
+    me_minta = r"(kW|MW|GJ|db|lm3|m3|m³|kWh|MWh|hó)"
+    ido_oszlop_minta = r"(?:\d{4}\.\d{2}\.\d{2}\s*[-–]?\s*\d{4}\.\d{2}\.\d{2}|\d{4}\.\d{2}\s*hó|\d{4}\.\d{2})"
+    tetel_minta = re.compile(rf"^(.+?)\s+{ido_oszlop_minta}\s+({egyes_szam})\s+({egyes_szam})\s*{me_minta}\s+({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?\s+({egyes_szam})(?:\s+(27|5|18|0|AHK)\b)?")
     talalatok = list()
 
     for s in osszes_sor[kezd_i:veg_i]:
@@ -537,6 +550,9 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
             kategoria = "Víziközmű - "
             continue
 
+        if s_low.startswith("fizetendő ") or "összesen" in s_low:
+            continue
+
         m = tetel_minta.search(s)
         if not m:
             continue
@@ -547,7 +563,7 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
         me = m.group(4).replace("m³", "m3")
         ar = _hu_szam(m.group(5))
         afa_nyers = m.group(7)
-        afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
+        afa = 5.0 if not afa_nyers else (0.0 if afa_nyers == "AHK" else float(afa_nyers))
 
         if ar is not None:
             talalatok.append({"Megnevezés": nev, "Mennyiség": round(menny, 4), "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
@@ -555,6 +571,7 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
+
 
 def feldolgoz_pdf(fajl):
     pdf_bytes = fajl.read()
