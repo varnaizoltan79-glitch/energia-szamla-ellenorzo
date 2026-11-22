@@ -124,7 +124,7 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl):
             fnev = f"{date.today().year}_{uj_szamla['szamlaszam'].replace('/', '_')}.pdf"
             supabase.storage.from_("szamlak-pdf").upload(path=fnev, file=fajl.read(), file_options={"content-type": "application/pdf", "upsert": "true"})
             supabase.table("szamlak").update({"pdf_utvonal": fnev}).eq("id", sid).execute()
-        st.session_state["utolso_mentes"] = f"✅ Sikeresen megtörtént a számla rögzítése! (Számlaszám: {uj_szamla['szamlaszam']}, Elszámolási hónap: {uj_szamla['elszamolasi_honap']}, ID: #{sid})"
+        st.session_state["utolso_mentes"] = f"✅ A számla rögzítése megtörtént! (Számlaszám: {uj_szamla['szamlaszam']}, Elszámolási hónap: {uj_szamla['elszamolasi_honap']}, ID: #{sid})"
         urit_urlap()
         st.rerun()
     except Exception as hiba:
