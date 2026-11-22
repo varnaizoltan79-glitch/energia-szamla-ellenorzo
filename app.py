@@ -990,7 +990,7 @@ def mutat_rogzitett_szamlak():
             return ["background-color: #d4edda; color: #155724; font-weight: bold"] * len(sor)
         return [""] * len(sor)
 
-    st.yl_df = df.style.apply(_szinez_utolso, axis=1)
+    st.yl_df = df.style.format({"Bruttó összeg (Ft)": ft_szoveg}).apply(_szinez_utolso, axis=1)
 
     rogz_ver = st.session_state.get("rogzitett_ver", 0)
     st.caption("💡 Az utoljára rögzített számla sora zölddel van kiemelve. Kattints egy sor elejére a csatolt PDF megnyitásához!")
@@ -1016,7 +1016,7 @@ def mutat_rogzitett_szamlak():
         "Számlaszám": s["szamlaszam"],
         "Elszámolási hónap": tiszta_honap(s.get("elszamolasi_honap")),
         "Felhasználási hely": h_map.get(s["felhasznalasi_hely_id"], ""),
-        "Bruttó összeg (Ft)": int(round(float(s["szamlan_szereplo_brutto"])))
+        "Bruttó összeg (Ft)": ft_szoveg(s["szamlan_szereplo_brutto"])
     } for s in szurt_lista)
 
     szerk_torles = st.data_editor(
@@ -1056,6 +1056,7 @@ def mutat_rogzitett_szamlak():
                 st.session_state.pop("torles_megerosites_idk", None)
                 st.session_state["rogzitett_ver"] = rogz_ver + 1
                 st.rerun()
+
 
 
 def mutat_kimutatasok():
