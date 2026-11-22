@@ -1155,3 +1155,10 @@ menu = st.sidebar.radio("Menü", list(("🧾 Számla ellenőrzés és feltölté
 if menu == "🧾 Számla ellenőrzés és feltöltés":
     mutat_szamla_rogzites(int(user_sor["id"]))
 elif menu == "📑 Rögzített számlák":
+    mutat_rogzitett_szamlak()
+elif menu == "📊 Kimutatások és Riportok":
+    mutat_kimutatasok()
+elif menu == "🔄 Helyettesítések":
+    mutat_helyettesitesek()
+else:
+    mutat_torzsadatok()
