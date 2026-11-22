@@ -385,6 +385,7 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl, gyujto_marad=False):
         st.rerun()
     except Exception as hiba:
         st.error(f"Pontos hiba oka: {hiba}")
+
 def mutat_helyettesitesek():
     st.header("🔄 Helyettesítések kezelése")
     osszes_user = supabase.table("energetikusok").select("*").order("nev").execute().data or list()
@@ -444,15 +445,7 @@ def mutat_torzsadatok():
                 fel_nev = u_map.get(h.get("felelos_energetikus_id")) or "Nincs kijelölve"
                 helyett_nev = u_map.get(h.get("allando_helyettes_id")) or "Nincs kijelölve"
                 e_tipus = h.get("energiatipus") if h.get("energiatipus") in energia_opciok else "Villamos energia"
-                h_sorok.append({
-                    "ID": h["id"],
-                    "Megnevezés": h["megnevezes"],
-                    "Energiatípus": e_tipus,
-                    "POD / EIC": h["pod_eic_azonosito"],
-                    "Felelős": fel_nev,
-                    "Állandó helyettes": helyett_nev,
-                    "Aktív": bool(h.get("aktiv", True))
-                })
+                h_sorok.append({"ID": h["id"], "Megnevezés": h["megnevezes"], "Energiatípus": e_tipus, "POD / EIC": h["pod_eic_azonosito"], "Felelős": fel_nev, "Állandó helyettes": helyett_nev, "Aktív": bool(h.get("aktiv", True))})
 
             szerk_hely_df = st.data_editor(
                 pd.DataFrame(h_sorok),
@@ -474,22 +467,8 @@ def mutat_torzsadatok():
                 for _, sor in szerk_hely_df.iterrows():
                     hid = int(sor["ID"])
                     regi = eredeti_h[hid]
-                    uj_adat = {
-                        "megnevezes": str(sor["Megnevezés"]).strip(),
-                        "energiatipus": sor["Energiatípus"],
-                        "pod_eic_azonosito": str(sor["POD / EIC"]).strip(),
-                        "felelos_energetikus_id": nev_to_id.get(sor["Felelős"]),
-                        "allando_helyettes_id": nev_to_id.get(sor["Állandó helyettes"]),
-                        "aktiv": bool(sor["Aktív"])
-                    }
-                    if (
-                        uj_adat["megnevezes"] != regi["megnevezes"]
-                        or uj_adat["energiatipus"] != (regi.get("energiatipus") or "Villamos energia")
-                        or uj_adat["pod_eic_azonosito"] != regi["pod_eic_azonosito"]
-                        or uj_adat["felelos_energetikus_id"] != regi.get("felelos_energetikus_id")
-                        or uj_adat["allando_helyettes_id"] != regi.get("allando_helyettes_id")
-                        or uj_adat["aktiv"] != bool(regi.get("aktiv", True))
-                    ):
+                    uj_adat = {"megnevezes": str(sor["Megnevezés"]).strip(), "energiatipus": sor["Energiatípus"], "pod_eic_azonosito": str(sor["POD / EIC"]).strip(), "felelos_energetikus_id": nev_to_id.get(sor["Felelős"]), "allando_helyettes_id": nev_to_id.get(sor["Állandó helyettes"]), "aktiv": bool(sor["Aktív"])}
+                    if uj_adat["megnevezes"] != regi["megnevezes"] or uj_adat["energiatipus"] != (regi.get("energiatipus") or "Villamos energia") or uj_adat["pod_eic_azonosito"] != regi["pod_eic_azonosito"] or uj_adat["felelos_energetikus_id"] != regi.get("felelos_energetikus_id") or uj_adat["allando_helyettes_id"] != regi.get("allando_helyettes_id") or uj_adat["aktiv"] != bool(regi.get("aktiv", True)):
                         supabase.table("felhasznalasi_helyek").update(uj_adat).eq("id", hid).execute()
                         modositva += 1
                 if modositva > 0:
@@ -581,7 +560,180 @@ def mutat_torzsadatok():
                     st.success(f"✅ {modositva} db energetikus adatai mentve!")
                     st.rerun()
                 else:
+                    st.info("Nem történt változás a táblázatban.")
 
+        with st.expander("➕ Új energetikus hozzáadása"):
+            with st.form("uj_user_form"):
+                uc1, uc2 = st.columns(2)
+                uj_u_nev = uc1.text_input("Új energetikus teljes neve:")
+                uj_u_szerep = uc2.selectbox("Szerepkör:", szerep_opciok)
+                if st.form_submit_button("💾 Energetikus mentése", type="primary") and uj_u_nev.strip():
+                    uj_adat = {"nev": uj_u_nev.strip(), "szerepkor": uj_u_szerep, "aktiv": True}
+                    if osszes_user and "email" in next(iter(osszes_user)):
+                        uj_adat["email"] = f"{re.sub(r'[^a-z0-9]', '', uj_u_nev.lower())}@ceg.hu"
+                    supabase.table("energetikusok").insert(uj_adat).execute()
+                    st.rerun()
+
+        if osszes_user:
+            st.divider()
+            st.subheader("🗑️ Energetikus törlése")
+            u_ver = st.session_state.get("user_torles_ver", 0)
+            u_torol_opc = {f"#{u['id']} – {u['nev']} ({u['szerepkor']})": u for u in osszes_user}
+            val_u_torol = st.selectbox("Válaszd ki a törlendő energetikust:", list(u_torol_opc.keys()), index=None, placeholder="Válassz ki egy energetikust...", key=f"u_torol_sel_{u_ver}")
+            if val_u_torol:
+                kiv_u = u_torol_opc[val_u_torol]
+                if st.button("🗑️ Kiválasztott energetikus törlése"):
+                    st.session_state["u_torles_megerosites_id"] = kiv_u["id"]
+                if st.session_state.get("u_torles_megerosites_id") == kiv_u["id"]:
+                    st.warning(f"⚠️ Biztos, hogy törölni kívánja az energetikust? (**{kiv_u['nev']}**)")
+                    uc_igen, uc_nem, _ = st.columns((1.2, 1.2, 4))
+                    if uc_igen.button("✅ Igen", type="primary", key=f"u_igen_{kiv_u['id']}"):
+                        try:
+                            supabase.table("energetikusok").delete().eq("id", kiv_u["id"]).execute()
+                            st.session_state.pop("u_torles_megerosites_id", None)
+                            st.session_state["user_torles_ver"] = u_ver + 1
+                            st.success(f"✅ {kiv_u['nev']} törölve lett!")
+                            st.rerun()
+                        except Exception:
+                            st.error("⚠️ Ez az energetikus nem törölhető véglegesen, mert számlához, telephelyhez vagy helyettesítéshez van kapcsolva.")
+                            if kiv_u.get("aktiv"):
+                                if st.button("🚫 Inaktiválás törlés helyett", key=f"u_inakt_{kiv_u['id']}"):
+                                    supabase.table("energetikusok").update({"aktiv": False}).eq("id", kiv_u["id"]).execute()
+                                    st.session_state.pop("u_torles_megerosites_id", None)
+                                    st.session_state["user_torles_ver"] = u_ver + 1
+                                    st.rerun()
+                    if uc_nem.button("❌ Nem", key=f"u_nem_{kiv_u['id']}"):
+                        st.session_state.pop("u_torles_megerosites_id", None)
+                        st.session_state["user_torles_ver"] = u_ver + 1
+                        st.rerun()
+
+            st.divider()
+            st.subheader("🔀 Telephelyek szétosztása energetikusok között")
+            rendezett_userek = sorted(osszes_user, key=lambda x: (bool(x.get("aktiv")), x["nev"]))
+            szuro_opciok = {"Összes felhasználási hely": None}
+            for u in rendezett_userek:
+                szuro_opciok[f"{u['nev']} [{'Inaktív' if not u.get('aktiv') else 'Aktív'}]"] = u["id"]
+            val_szuro = st.selectbox("Kinek a telephelyeit szeretnéd szétosztani?", list(szuro_opciok.keys()))
+            szurt_forras_id = szuro_opciok[val_szuro]
+
+            szurt_helyek = osszes_hely if szurt_forras_id is None else list(h for h in osszes_hely if h.get("felelos_energetikus_id") == szurt_forras_id or h.get("allando_helyettes_id") == szurt_forras_id)
+            if not szurt_helyek:
+                st.info("A kiválasztott szűrőhöz nem tartozik felhasználási hely.")
+            else:
+                st.caption("💡 Kattints duplán a **Felelős energetikus** vagy az **Állandó helyettes** oszlop celláira a kiosztás módosításához!")
+                nev_to_id_akt = {"Nincs kijelölve": None}
+                for u in osszes_user:
+                    if u.get("aktiv"):
+                        nev_to_id_akt[u["nev"]] = u["id"]
+                valaszthato_nevek = list(nev_to_id_akt.keys())
+
+                kiosztas_sorok = list()
+                for h in szurt_helyek:
+                    fel_nev = u_map.get(h.get("felelos_energetikus_id")) or "Nincs kijelölve"
+                    helyett_nev = u_map.get(h.get("allando_helyettes_id")) or "Nincs kijelölve"
+                    if fel_nev not in valaszthato_nevek:
+                        valaszthato_nevek.append(fel_nev)
+                    if helyett_nev not in valaszthato_nevek:
+                        valaszthato_nevek.append(helyett_nev)
+                    kiosztas_sorok.append({"ID": h["id"], "Megnevezés": h["megnevezes"], "Energiatípus": h.get("energiatipus") or "", "POD / EIC": h["pod_eic_azonosito"], "Felelős energetikus": fel_nev, "Állandó helyettes": helyett_nev})
+
+                szerk_kiosztas = st.data_editor(
+                    pd.DataFrame(kiosztas_sorok),
+                    use_container_width=True,
+                    hide_index=True,
+                    disabled=list(("ID", "Megnevezés", "Energiatípus", "POD / EIC")),
+                    column_config={
+                        "Felelős energetikus": st.column_config.SelectboxColumn("Felelős energetikus", options=valaszthato_nevek, required=True),
+                        "Állandó helyettes": st.column_config.SelectboxColumn("Állandó helyettes", options=valaszthato_nevek, required=True)
+                    },
+                    key=f"kiosztas_ed_{szurt_forras_id}"
+                )
+
+                if st.button("💾 Telephely-kiosztás mentése", type="primary"):
+                    eredeti_map = {h["id"]: h for h in szurt_helyek}
+                    modositva = 0
+                    for _, sor in szerk_kiosztas.iterrows():
+                        hid = int(sor["ID"])
+                        uj_fel_id = nev_to_id_akt.get(sor["Felelős energetikus"], eredeti_map[hid].get("felelos_energetikus_id"))
+                        uj_helyett_id = nev_to_id_akt.get(sor["Állandó helyettes"], eredeti_map[hid].get("allando_helyettes_id"))
+                        if uj_fel_id != eredeti_map[hid].get("felelos_energetikus_id") or uj_helyett_id != eredeti_map[hid].get("allando_helyettes_id"):
+                            supabase.table("felhasznalasi_helyek").update({"felelos_energetikus_id": uj_fel_id, "allando_helyettes_id": uj_helyett_id}).eq("id", hid).execute()
+                            modositva += 1
+                    if modositva > 0:
+                        st.success(f"✅ {modositva} db felhasználási hely kiosztása sikeresen mentve!")
+                        st.rerun()
+                    else:
+                        st.info("Nem történt változás a kiosztásban.")
+
+    with t_szolg:
+        if osszes_szolg:
+            st.caption("💡 Kattints duplán a szolgáltató **Név** vagy **Energiatípus** cellájára a módosításhoz!")
+            sz_sorok = list({"ID": s["id"], "Név": s["nev"], "Energiatípus": s.get("energiatipus") if s.get("energiatipus") in energia_opciok else "Villamos energia"} for s in osszes_szolg)
+            szerk_sz_df = st.data_editor(
+                pd.DataFrame(sz_sorok),
+                use_container_width=True,
+                hide_index=True,
+                disabled=list(("ID",)),
+                column_config={
+                    "Energiatípus": st.column_config.SelectboxColumn("Energiatípus", options=energia_opciok, required=True)
+                },
+                key="torzs_szolg_editor"
+            )
+            if st.button("💾 Szolgáltatók módosításainak mentése", type="primary"):
+                eredeti_sz = {s["id"]: s for s in osszes_szolg}
+                modositva = 0
+                for _, sor in szerk_sz_df.iterrows():
+                    sid = int(sor["ID"])
+                    regi = eredeti_sz[sid]
+                    uj_nev = str(sor["Név"]).strip()
+                    uj_et = sor["Energiatípus"]
+                    if uj_nev and (uj_nev != regi["nev"] or uj_et != (regi.get("energiatipus") or "Villamos energia")):
+                        supabase.table("szolgaltatok").update({"nev": uj_nev, "energiatipus": uj_et}).eq("id", sid).execute()
+                        modositva += 1
+                if modositva > 0:
+                    st.success(f"✅ {modositva} db szolgáltató módosítása mentve!")
+                    st.rerun()
+                else:
+                    st.info("Nem történt változás a táblázatban.")
+
+        with st.expander("➕ Új szolgáltató hozzáadása"):
+            with st.form("uj_szolg_form"):
+                sc1, sc2 = st.columns(2)
+                uj_sz_nev = sc1.text_input("Szolgáltató neve:")
+                uj_sz_et = sc2.selectbox("Energiatípus:", energia_opciok)
+                if st.form_submit_button("💾 Új szolgáltató mentése", type="primary") and uj_sz_nev.strip():
+                    try:
+                        supabase.table("szolgaltatok").insert({"nev": uj_sz_nev.strip(), "energiatipus": uj_sz_et}).execute()
+                        st.rerun()
+                    except Exception as hiba:
+                        st.error(f"Adatbázis hiba: {hiba}")
+
+        if osszes_szolg:
+            st.divider()
+            st.subheader("🗑️ Szolgáltató törlése")
+            sz_ver = st.session_state.get("szolg_torles_ver", 0)
+            sz_torol_opc = {f"#{s['id']} – {s['nev']} ({s.get('energiatipus') or ''})": s for s in osszes_szolg}
+            val_sz_torol = st.selectbox("Válaszd ki a törlendő szolgáltatót:", list(sz_torol_opc.keys()), index=None, placeholder="Válassz ki egy szolgáltatót...", key=f"sz_torol_sel_{sz_ver}")
+            if val_sz_torol:
+                kiv_sz = sz_torol_opc[val_sz_torol]
+                if st.button("🗑️ Kiválasztott szolgáltató törlése"):
+                    st.session_state["sz_torles_megerosites_id"] = kiv_sz["id"]
+                if st.session_state.get("sz_torles_megerosites_id") == kiv_sz["id"]:
+                    st.warning(f"⚠️ Biztos, hogy törölni kívánja a szolgáltatót? (**{kiv_sz['nev']}**)")
+                    szc1, szc2, _ = st.columns((1.2, 1.2, 4))
+                    if szc1.button("✅ Igen", type="primary", key=f"sz_igen_{kiv_sz['id']}"):
+                        try:
+                            supabase.table("szolgaltatok").delete().eq("id", kiv_sz["id"]).execute()
+                            st.session_state.pop("sz_torles_megerosites_id", None)
+                            st.session_state["szolg_torles_ver"] = sz_ver + 1
+                            st.success(f"✅ {kiv_sz['nev']} törölve lett!")
+                            st.rerun()
+                        except Exception:
+                            st.error("⚠️ Ez a szolgáltató nem törölhető, mert már rögzített számla tartozik hozzá.")
+                    if szc2.button("❌ Nem", key=f"sz_nem_{kiv_sz['id']}"):
+                        st.session_state.pop("sz_torles_megerosites_id", None)
+                        st.session_state["szolg_torles_ver"] = sz_ver + 1
+                        st.rerun()
 
 def mutat_kimutatasok():
     st.header("Rögzített számlák és havi kimutatások")
@@ -665,6 +817,7 @@ def mutat_kimutatasok():
             ea_df["Szumma nettó egységár (Ft/kWh)"] = (ea_df["Nettó"] / ea_df["kWh"]).round(2)
             ea_sorrend = sorted(list(ea_df["Elszámolási hónap"].unique()), key=honap_kulcs)
             st.altair_chart(alt.Chart(ea_df).mark_bar().encode(x=alt.X("Elszámolási hónap:N", sort=ea_sorrend, axis=alt.Axis(labelAngle=0, title="Elszámolási hónap")), y=alt.Y("Szumma nettó egységár (Ft/kWh):Q", axis=alt.Axis(title="Szumma nettó egységár (Ft/kWh)")), color=alt.Color("Felhasználási hely:N", title="Felhasználási hely"), xOffset="Felhasználási hely:N", tooltip=[alt.Tooltip("Elszámolási hónap:N"), alt.Tooltip("Felhasználási hely:N"), alt.Tooltip("Szumma nettó egységár (Ft/kWh):Q", format=",.2f")]).properties(height=360), use_container_width=True)
+
     with tab_tetel:
         szamla_map = {s["id"]: s for s in szurt_lista}
         if not osszes_tetel:
@@ -722,6 +875,7 @@ def mutat_kimutatasok():
                 st.session_state.pop("torles_megerosites_id", None)
                 st.session_state["kimutatas_ver"] = kim_ver + 1
                 st.rerun()
+
 def mutat_szamla_rogzites(user_id):
     fv = st.session_state["form_ver"]
     col_fej, col_gomb = st.columns((4, 1))
