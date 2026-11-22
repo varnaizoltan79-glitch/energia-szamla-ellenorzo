@@ -1121,7 +1121,7 @@ def mutat_szamla_rogzites(user_id):
     elif fajl and fajl.name.lower().endswith(".csv"):
         alap_df = pd.read_csv(fajl)
 
-    def _frissit_tetel_osszegek(df_be):
+        def _frissit_tetel_osszegek(df_be):
         df_ki = df_be.copy()
         nettos = list()
         bruttos = list()
@@ -1129,8 +1129,8 @@ def mutat_szamla_rogzites(user_id):
             m_v = sor.get("Mennyiség")
             a_v = sor.get("Nettó egységár")
             if m_v is None or a_v is None or pd.isna(m_v) or pd.isna(a_v):
-                nettos.append(0)
-                bruttos.append(0)
+                nettos.append("0 Ft")
+                bruttos.append("0 Ft")
                 continue
             menny_d = Decimal(str(m_v))
             ar_d = Decimal(str(a_v))
@@ -1138,8 +1138,8 @@ def mutat_szamla_rogzites(user_id):
             afa_d = Decimal(str(afa_v)) if (afa_v is not None and not pd.isna(afa_v)) else Decimal("27.0")
             n_val = (menny_d * ar_d).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
             b_val = (n_val * (Decimal("1") + afa_d / Decimal("100"))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-            nettos.append(int(n_val))
-            bruttos.append(int(b_val))
+            nettos.append(ft_szoveg(n_val))
+            bruttos.append(ft_szoveg(b_val))
         df_ki["Nettó összeg (Ft)"] = nettos
         df_ki["Bruttó összeg (Ft)"] = bruttos
         return df_ki
@@ -1162,6 +1162,8 @@ def mutat_szamla_rogzites(user_id):
     if regi_parok != uj_parok:
         st.session_state[df_state_kulcs] = ujraszamolt_df
         st.rerun()
+
+    ossz_netto, ossz_brutto, tetelek = szamol_tetelek(ujraszamolt_df)
 
     ossz_netto, ossz_brutto, tetelek = szamol_tetelek(ujraszamolt_df)
     brutto_dec = Decimal(szamlan_brutto)
