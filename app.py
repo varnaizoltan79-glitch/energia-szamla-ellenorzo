@@ -1109,7 +1109,7 @@ def mutat_szamla_rogzites(user_id):
     elszamolasi_honap = szamol_elszamolasi_honap(ig)
     c3.info(f"📅 Elszámolási hónap: **{elszamolasi_honap}**")
 
-        st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
+    st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
     alap_df = pd.DataFrame(dict(Megnevezés=["Energiadíj", "Átviteli forgalmi díj", "Elosztói forgalmi díj", "Alapdíj"], Mennyiség=[0.0, 0.0, 0.0, 0.0], Mértékegység=["kWh", "kWh", "kWh", "hó"], Nettó_egységár=[0.0, 0.0, 0.0, 0.0], ÁFA=[27.0, 27.0, 27.0, 27.0]))
     alap_df.columns = list(("Megnevezés", "Mennyiség", "Mértékegység", "Nettó egységár", "ÁFA (%)"))
     if kiv_pod_info and kiv_pod_info.get("tetelek_df") is not None:
