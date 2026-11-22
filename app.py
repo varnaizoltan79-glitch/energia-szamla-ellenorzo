@@ -69,6 +69,7 @@ def _hu_szam(szoveg):
     if not szoveg:
         return None
     tiszta = szoveg.replace("\xa0", " ").strip()
+    tiszta = re.sub(r"^-\s+", "-", tiszta)
     tiszta = re.sub(r"(?<=\d)\s+(?=\d)", "", tiszta)
     if "," in tiszta and "." in tiszta:
         tiszta = tiszta.replace(".", "").replace(",", ".")
@@ -96,22 +97,22 @@ def _vizszintes_sorok(oldal):
     szavak = oldal.get_text("words")
     if not szavak:
         return list()
-    rendezett = sorted(szavak, key=lambda w: (round(w[1] / 3.0), w[0]))
+    rendezett = sorted(szavak, key=lambda w: (round(w / 3.0), w))
     sorok = list()
-    akt_y = rendezett[0][1]
+    akt_y = rendezett
     akt_szavak = list()
     for w in rendezett:
         x0, y0, _, _, szo = w[:5]
         if abs(y0 - akt_y) <= 3.5:
             akt_szavak.append((x0, szo))
         else:
-            akt_szavak.sort(key=lambda item: item[0])
-            sorok.append(" ".join(item[1] for item in akt_szavak))
+            akt_szavak.sort(key=lambda item: item)
+            sorok.append(" ".join(item for item in akt_szavak))
             akt_y = y0
             akt_szavak = [(x0, szo)]
     if akt_szavak:
-        akt_szavak.sort(key=lambda item: item[0])
-        sorok.append(" ".join(item[1] for item in akt_szavak))
+        akt_szavak.sort(key=lambda item: item)
+        sorok.append(" ".join(item for item in akt_szavak))
     return sorok
 
 def _feldolgoz_alteo_pdf(dok, szoveg, adat):
@@ -212,18 +213,22 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
 
         nev = m_tetel.group(1).strip()
         maradek = m_tetel.group(3).strip()
-        szamok_raw = re.findall(r"-?\d{1,3}(?:[\s\xa0]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?", maradek)
+        szamok_raw = re.findall(r"(?:-\s*)?\d{1,3}(?:[\s\xa0]\d{3})+(?:,\d+)?|(?:-\s*)?\d+(?:,\d+)?", maradek)
         szamok = list(x for x in (_hu_szam(r) for r in szamok_raw) if x is not None)
-        if not szamok:
+        if len(szamok) < 3:
             continue
 
-        if "közbeszerzési" in nev.lower() and len(szamok) >= 2:
-            netto_ertek = szamok[-1]
-            talalatok.append({"Megnevezés": nev, "Mennyiség": 1.0, "Mértékegység": "db", "Nettó egységár": netto_ertek, "ÁFA (%)": 27.0})
-        elif len(szamok) >= 2:
-            menny = szamok[0]
-            ar = szamok[1]
-            talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": akt_me, "Nettó egységár": ar, "ÁFA (%)": akt_afa})
+        netto_ellenorzes = szamok[-1]
+        if "közbeszerzési" in nev.lower():
+            alap_ertek = szamok
+            szazalek = szamok
+            if abs((alap_ertek * szazalek / 100.0) - netto_ellenorzes) <= 2.5:
+                talalatok.append({"Megnevezés": nev, "Mennyiség": 1.0, "Mértékegység": "db", "Nettó egységár": netto_ellenorzes, "ÁFA (%)": 27.0})
+        else:
+            menny = szamok
+            ar = szamok
+            if abs((menny * ar) - netto_ellenorzes) <= 2.5:
+                talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": akt_me, "Nettó egységár": ar, "ÁFA (%)": akt_afa})
 
     tetelek_df = pd.DataFrame(talalatok) if talalatok else None
     pod_brutto = 0
@@ -232,7 +237,7 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         if "áfa szerinti bontás" in s.lower():
             afa_bontasban = True
         elif afa_bontasban and s.lower().startswith("összesen"):
-            szamok_raw = re.findall(r"-?\d{1,3}(?:[\s\xa0]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?", s)
+            szamok_raw = re.findall(r"(?:-\s*)?\d{1,3}(?:[\s\xa0]\d{3})+(?:,\d+)?|(?:-\s*)?\d+(?:,\d+)?", s)
             szamok = list(x for x in (_hu_szam(r) for r in szamok_raw) if x is not None)
             if szamok:
                 pod_brutto = int(round(szamok[-1]))
@@ -270,12 +275,21 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
 
     kezdo_indexek = list(i for i, s in enumerate(osszes_sor) if "TELEPHELYI RÉSZLETEZŐ" in s.upper())
     if not kezdo_indexek:
-        kezdo_indexek = [0]
+        kezdo_indexek =
 
-    pod_adatok = dict()
+    osszevont_blokkok = list()
     for idx, start_i in enumerate(kezdo_indexek):
         end_i = kezdo_indexek[idx + 1] if idx + 1 < len(kezdo_indexek) else len(osszes_sor)
-        pod_nev, pod_info = _feldolgoz_mvm_pod_blokk(osszes_sor[start_i:end_i], adat["tol"], adat["ig"], adat["brutto"])
+        blokk = osszes_sor[start_i:end_i]
+        van_pod = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", "\n".join(blokk))
+        if van_pod or not osszevont_blokkok:
+            osszevont_blokkok.append(list(blokk))
+        else:
+            osszevont_blokkok[-1].extend(blokk)
+
+    pod_adatok = dict()
+    for blokk in osszevont_blokkok:
+        pod_nev, pod_info = _feldolgoz_mvm_pod_blokk(blokk, adat["tol"], adat["ig"], adat["brutto"])
         if pod_nev:
             pod_adatok[pod_nev] = pod_info
 
@@ -920,7 +934,16 @@ def mutat_szamla_rogzites(user_id):
     kiv_pod = pdf_adat["pod"] if pdf_adat else ""
     kiv_pod_info = None
 
-    if pod_adatok:
+        if pod_adatok:
+        foszamla_br = pdf_adat.get("foszamla_brutto", 0) if pdf_adat else 0
+        podok_osszesen = sum(p["brutto"] for p in pod_adatok.values())
+        if len(pod_adatok) > 1 and foszamla_br > 0:
+            gy_elteres = abs(foszamla_br - podok_osszesen)
+            g1, g2, g3 = st.columns(3)
+            g1.metric("Gyűjtőszámla főösszege", ft_szoveg(foszamla_br))
+            g2.metric("POD-ok összesített bruttója", ft_szoveg(podok_osszesen))
+            g3.metric("Gyűjtőszámla eltérés", ft_szoveg(gy_elteres))
+
         hely_pod_nev = {h["pod"]: h["nev"] for h in helyek}
         meglevo_hely_idk = set()
         if pdf_adat and pdf_adat.get("szamlaszam"):
@@ -938,6 +961,7 @@ def mutat_szamla_rogzites(user_id):
         val_pod_cimke = st.selectbox("📍 Mérési pont (POD) kiválasztása a számlából:", list(pod_cimkek.keys()), key=f"pod_sel_{f_id}")
         kiv_pod = pod_cimkek[val_pod_cimke]
         kiv_pod_info = pod_adatok[kiv_pod]
+
 
     form_kulcs = f"{f_id}_{kiv_pod}" if kiv_pod else f_id
 
