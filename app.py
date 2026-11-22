@@ -627,7 +627,7 @@ def mutat_torzsadatok():
 
     t_hely, t_user, t_szolg = st.tabs(list(("🏭 Felhasználási helyek", "👤 Energetikusok", "🏢 Szolgáltatók")))
 
-    with t_hely:
+        with t_hely:
         if osszes_hely:
             st.caption("💡 Kattints duplán a cellákra a **Megnevezés**, **Energiatípus**, **POD / EIC**, **Felelős**, **Állandó helyettes** vagy **Aktív** mezők módosításához!")
             nev_to_id = {"Nincs kijelölve": None}
@@ -672,7 +672,7 @@ def mutat_torzsadatok():
                 else:
                     st.info("Nem történt változás a táblázatban.")
 
-                        with st.expander("➕ Új felhasználási hely hozzáadása"):
+        with st.expander("➕ Új felhasználási hely hozzáadása"):
             with st.form("uj_hely_form"):
                 fc1, fc2, fc3 = st.columns(3)
                 uj_h_nev = fc1.text_input("Megnevezés:")
@@ -697,7 +697,6 @@ def mutat_torzsadatok():
                                 st.warning("⚠️ Meglévő felhasználási hely: ezzel a POD / EIC azonosítóval már rögzítve van telephely a rendszerben!")
                             else:
                                 st.error(f"Adatbázis hiba: {hiba}")
-
 
         if osszes_hely:
             st.divider()
@@ -731,6 +730,7 @@ def mutat_torzsadatok():
                         st.session_state.pop("h_torles_megerosites_id", None)
                         st.session_state["hely_torles_ver"] = h_ver + 1
                         st.rerun()
+
 
     with t_user:
         szerep_opciok = list(("Energetikus", "Vezető energetikus", "Adminisztrátor"))
