@@ -395,3 +395,54 @@ def mutat_szamla_rogzites(user_id):
     szamlan_brutto_str = c2.text_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=alap_br_szoveg, placeholder="pl. 6 648", key=br_kulcs, on_change=formaz_ezres, args=(br_kulcs,))
     br_szamjegyek = re.sub(r"\D", "", szamlan_brutto_str)
     szamlan_brutto = int(br_szamjegyek) if br_szamjegyek else 0
+    kelte = pdf_adat["kelte"] if pdf_adat else date.today()
+    hatarido = pdf_adat["hatarido"] if pdf_adat else date.today()
+    tol = c3.date_input("Elszámolási időszak kezdete", value=pdf_adat["tol"] if pdf_adat else date.today(), key=f"t_{f_id}")
+    ig = c3.date_input("Elszámolási időszak vége", value=pdf_adat["ig"] if pdf_adat else date.today(), key=f"i_{f_id}")
+    datum_rendben = tol <= ig
+    if not datum_rendben:
+        c3.error("⚠️ Az időszak kezdete nem lehet későbbi, mint a vége!")
+    elszamolasi_honap = szamol_elszamolasi_honap(ig)
+    c3.info(f"📅 Elszámolási hónap: **{elszamolasi_honap}**")
+
+    st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
+    alap_df = pd.DataFrame(dict(Megnevezés=["Energiadíj", "Átviteli forgalmi díj", "Elosztói forgalmi díj", "Alapdíj"], Mennyiség=[0.0, 0.0, 0.0, 0.0], Mértékegység=["kWh", "kWh", "kWh", "hó"], Nettó_egységár=[0.0, 0.0, 0.0, 0.0], ÁFA=[27.0, 27.0, 27.0, 27.0]))
+    alap_df.columns = list(("Megnevezés", "Mennyiség", "Mértékegység", "Nettó egységár", "ÁFA (%)"))
+    if fajl and fajl.name.lower().endswith(".xlsx"): alap_df = pd.read_excel(fajl)
+    if fajl and fajl.name.lower().endswith(".csv"): alap_df = pd.read_csv(fajl)
+
+    szerk_df = st.data_editor(alap_df, num_rows="dynamic", use_container_width=True, key=f"ed_{f_id}")
+    ossz_netto, ossz_brutto, tetelek = szamol_tetelek(szerk_df)
+
+    brutto_dec = Decimal(szamlan_brutto)
+    elteres = abs(brutto_dec - ossz_brutto)
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Számított Nettó", ft_szoveg(ossz_netto))
+    m2.metric("Számított Bruttó", ft_szoveg(ossz_brutto))
+    m3.metric("Eltérés a számlától", ft_szoveg(elteres))
+
+    egyezik = (elteres <= Decimal("2")) and (len(tetelek) > 0) and (szamlan_brutto > 0) and datum_rendben
+    if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
+    if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha az összegek egyeznek és a dátumok helyesek.")
+
+    gomb = st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary", disabled=not egyezik)
+    forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
+    stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
+    uj_szamla = {"szamlaszam": szamlaszam, "szolgaltato_id": szolg_id, "felhasznalasi_hely_id": hely_id, "forras_tipus": forras, "szamla_kelte": kelte.isoformat(), "fizetesi_hatarido": hatarido.isoformat(), "idoszak_tol": tol.isoformat(), "idoszak_ig": ig.isoformat(), "elszamolasi_honap": elszamolasi_honap, "szamlan_szereplo_brutto": float(brutto_dec), "szamitott_brutto": float(ossz_brutto), "elteres": float(elteres), "ellenorzes_statusz": stat, "jovahagyta_energetikus_id": user_id}
+    if gomb and egyezik: mentes_adatbazisba(uj_szamla, tetelek, fajl)
+
+st.sidebar.title("⚡ Energia Portál")
+users_data = supabase.table("energetikusok").select("id, nev, szerepkor").eq("aktiv", True).order("nev").execute().data or list()
+users_map = {u["nev"]: u for u in users_data}
+valasztott_nev = st.sidebar.selectbox("Belépett energetikus:", list(users_map.keys()))
+user_sor = users_map[valasztott_nev]
+st.sidebar.info(f"Szerepkör: **{user_sor['szerepkor']}**")
+
+menu = st.sidebar.radio("Menü", list(("🧾 Számla ellenőrzés és feltöltés", "📊 Kimutatások és Riportok", "⚙️ Törzsadatok és Helyettesítések")), on_change=urit_urlap)
+if menu == "🧾 Számla ellenőrzés és feltöltés":
+    mutat_szamla_rogzites(int(user_sor["id"]))
+elif menu == "📊 Kimutatások és Riportok":
+    mutat_kimutatasok()
+else:
+    mutat_torzsadatok()
