@@ -387,7 +387,7 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         if not jobb_szavak:
             continue
 
-        rendezett = sorted(jobb_szavak, key=lambda item: (round(item / 3.0), item))
+        rendezett = sorted(jobb_szavak, key=lambda item: (round(item[1] / 3.0), item[0]))
         _, akt_y, _ = next(iter(rendezett))
         akt_szavak = list()
         sorok_y = list()
@@ -395,12 +395,12 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
             if abs(y0 - akt_y) <= 3.5:
                 akt_szavak.append((x0, szo))
             else:
-                akt_szavak.sort(key=lambda item: item)
+                akt_szavak.sort(key=lambda item: item[0])
                 sorok_y.append((akt_y, " ".join(sszo for _, sszo in akt_szavak)))
                 akt_y = y0
                 akt_szavak = [(x0, szo)]
         if akt_szavak:
-            akt_szavak.sort(key=lambda item: item)
+            akt_szavak.sort(key=lambda item: item[0])
             sorok_y.append((akt_y, " ".join(sszo for _, sszo in akt_szavak)))
 
         horgonyok = list()
@@ -432,7 +432,7 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
                 legkozelebbi["szavak"].append((round(y0 / 4.0), x0, szo))
 
         for h in horgonyok:
-            h["szavak"].sort(key=lambda item: (item, item))
+            h["szavak"].sort(key=lambda item: (item[0], item[1]))
             nev = " ".join(s for _, _, s in h["szavak"]).replace("- ", "-").strip() or "Víziközmű díjtétel"
             if h["menny"] is not None and h["ar"] is not None:
                 talalatok.append({"Megnevezés": nev, "Mennyiség": h["menny"], "Mértékegység": h["me"], "Nettó egységár": h["ar"], "ÁFA (%)": h["afa"]})
