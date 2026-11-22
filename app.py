@@ -4,6 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from pypdf import PdfReader
 from supabase import create_client
 
@@ -23,8 +24,6 @@ if "form_ver" not in st.session_state:
 
 def urit_urlap():
     st.session_state["form_ver"] += 1
-
-import streamlit.components.v1 as components
 
 @st.dialog("📄 Számla PDF előnézet", width="large")
 def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
@@ -60,7 +59,6 @@ def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
     components.html(html_kod, height=640)
     st.download_button("📥 PDF letöltése a gépre", data=pdf_bytes, file_name=pdf_utvonal, mime="application/pdf")
 
-
 def feldolgoz_pdf(fajl):
     reader = PdfReader(fajl)
     oldalak = list(p.extract_text() or "" for p in reader.pages)
@@ -68,7 +66,7 @@ def feldolgoz_pdf(fajl):
     adat = {"szoveg": szoveg.strip(), "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0.0, "pod": ""}
     m = re.search(r"(?:Számla\s*sorszáma|Számlaszám|Bizonylat\s*sorszáma)[:\s]+([A-Za-z0-9/-]{5,})", szoveg, re.I)
     if m: adat["szamlaszam"] = m.group(1).strip()
-    alap_nev = fajl.name.rsplit(".", 1)[0]
+    alap_nev = next(iter(fajl.name.rsplit(".", 1)))
     mf = re.search(r"(\d{6,})", alap_nev)
     if not adat["szamlaszam"] and mf: adat["szamlaszam"] = mf.group(1)
     if not adat["szamlaszam"] and len(alap_nev) >= 5: adat["szamlaszam"] = alap_nev
@@ -140,7 +138,6 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl):
         st.rerun()
     except Exception as hiba:
         st.error(f"Pontos hiba oka: {hiba}")
-
 st.sidebar.title("⚡ Energia Portál")
 users_data = supabase.table("energetikusok").select("id, nev, szerepkor").eq("aktiv", True).order("nev").execute().data or list()
 users_map = {u["nev"]: u for u in users_data}
@@ -165,8 +162,8 @@ if menu == "📊 Kimutatások és Riportok":
     st.caption("💡 Kattints egy sor elejére a táblázatban a csatolt PDF számla megnyitásához!")
     esemeny = st.dataframe(df, use_container_width=True, on_select="rerun", selection_mode="single-row")
     if esemeny.selection.rows:
-    kiv_idx = next(iter(esemeny.selection.rows))
-    kiv_szamla = lista[kiv_idx]
+        kiv_idx = next(iter(esemeny.selection.rows))
+        kiv_szamla = lista[kiv_idx]
         if kiv_szamla.get("pdf_utvonal"):
             mutat_pdf_ablak(kiv_szamla["pdf_utvonal"], kiv_szamla["szamlaszam"])
         else:
@@ -201,6 +198,7 @@ helyek = get_helyek(user_id)
 if not helyek:
     st.warning("Nincs hozzád rendelt felhasználási hely a rendszerben.")
     st.stop()
+
 fajl = st.file_uploader("1. Húzd ide a számlát (PDF vagy Excel/CSV) – opcionális", type=list(("pdf", "xlsx", "csv")), key=f"fajl_{fv}")
 f_id = f"{fv}_{fajl.name}" if fajl else f"{fv}_ures"
 pdf_adat = None
