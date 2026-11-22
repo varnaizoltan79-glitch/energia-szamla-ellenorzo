@@ -98,6 +98,7 @@ SZOLGALTATO_SABLONOK = {
         "azonositok": ("debreceni vízmű", "23458208", "tiszamenti regionális vízművek", "11265832", "trvzrt.hu", "érv. zrt", "érv zrt", "11069186", "ervzrt.hu", "nyírségvíz", "11492809", "nyirsegviz.hu", "drv zrt", "dunántúli regionális vízmű", "11226002", "drv.hu"),
         "szolgaltato_nev_kulcs": "vízmű",
     }
+}
 
 
 
