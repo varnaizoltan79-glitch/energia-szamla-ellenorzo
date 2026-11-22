@@ -102,17 +102,31 @@ def _vizszintes_sorok(oldal):
     _, akt_y, *_ = next(iter(rendezett))
     akt_szavak = list()
     for w in rendezett:
-        x0, y0, _, _, szo = w[:5]
+        x0, y0, x1, _, szo, *_ = w
         if abs(y0 - akt_y) <= 3.5:
-            akt_szavak.append((x0, szo))
+            akt_szavak.append((x0, x1, szo))
         else:
             akt_szavak.sort(key=lambda item: item[0])
-            sorok.append(" ".join(s for _, s in akt_szavak))
+            sor_reszek = list()
+            elozo_x1 = None
+            for sx0, sx1, sszo in akt_szavak:
+                if elozo_x1 is not None:
+                    sor_reszek.append("  " if (sx0 - elozo_x1) > 8.5 else " ")
+                sor_reszek.append(sszo)
+                elozo_x1 = sx1
+            sorok.append("".join(sor_reszek))
             akt_y = y0
-            akt_szavak = [(x0, szo)]
+            akt_szavak = [(x0, x1, szo)]
     if akt_szavak:
         akt_szavak.sort(key=lambda item: item[0])
-        sorok.append(" ".join(s for _, s in akt_szavak))
+        sor_reszek = list()
+        elozo_x1 = None
+        for sx0, sx1, sszo in akt_szavak:
+            if elozo_x1 is not None:
+                sor_reszek.append("  " if (sx0 - elozo_x1) > 8.5 else " ")
+            sor_reszek.append(sszo)
+            elozo_x1 = sx1
+        sorok.append("".join(sor_reszek))
     return sorok
 
 def _feldolgoz_alteo_pdf(dok, szoveg, adat):
@@ -187,10 +201,19 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
 
     akt_afa = 27.0
     akt_me = "kWh"
+    meroallas_resz = False
     talalatok = list()
+    egyes_szam_minta = r"(?:-\s*)?\d{1,3}(?: \d{3})+(?:,\d+)?|(?:-\s*)?\d+(?:,\d+)?"
 
     for s in sorok:
         s_low = s.lower()
+        if "mérőállás" in s_low or "mérőgyári" in s_low or "induló állás" in s_low:
+            meroallas_resz = True
+        if "kereskedelmi díjak" in s_low or "közvetített szolgáltatás" in s_low or "pénzeszközök" in s_low or "adóalapon kívüli" in s_low:
+            meroallas_resz = False
+        if meroallas_resz:
+            continue
+
         if "adóalapon kívüli" in s_low or "pénzeszközök" in s_low:
             akt_afa = 0.0
         elif "kereskedelmi díjak" in s_low or "közvetített szolgáltatás" in s_low or "megnevezés" in s_low:
@@ -206,20 +229,23 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         elif "(kwh)" in s_low:
             akt_me = "kWh"
 
-        s_tagolt = re.sub(r"(\d{4}\.\d{2}\.\d{2}-\d{4}\.\d{2}\.\d{2})(\d)", r"\1 \2", s)
+        s_tagolt = re.sub(r"(\d{4}\.\d{2}\.\d{2}-\d{4}\.\d{2}\.\d{2})(\d)", r"\1  \2", s)
         m_tetel = re.search(r"^(.+?)\s+(\d{4}\.\d{2}\.\d{2}-\d{4}\.\d{2}\.\d{2})\s+(.+)$", s_tagolt)
         if not m_tetel:
             continue
 
         nev = m_tetel.group(1).strip()
         maradek = m_tetel.group(3).strip()
-        szamok_raw = re.findall(r"(?:-\s*)?\d{1,3}(?:[\s\xa0]\d{3})+(?:,\d+)?|(?:-\s*)?\d+(?:,\d+)?", maradek)
+        szamok_raw = re.findall(egyes_szam_minta, maradek)
         szamok = list(x for x in (_hu_szam(r) for r in szamok_raw) if x is not None)
         if len(szamok) < 3:
             continue
 
         elso_szam, masodik_szam, *_ = szamok
-        netto_ellenorzes = szamok[-1]
+        netto_ellenorzes = next(reversed(szamok))
+        if alap_brutto > 0 and abs(netto_ellenorzes) > alap_brutto * 1.5:
+            continue
+
         if "közbeszerzési" in nev.lower():
             if abs((elso_szam * masodik_szam / 100.0) - netto_ellenorzes) <= 2.5:
                 talalatok.append({"Megnevezés": nev, "Mennyiség": 1.0, "Mértékegység": "db", "Nettó egységár": netto_ellenorzes, "ÁFA (%)": 27.0})
@@ -234,10 +260,10 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         if "áfa szerinti bontás" in s.lower():
             afa_bontasban = True
         elif afa_bontasban and s.lower().startswith("összesen"):
-            szamok_raw = re.findall(r"(?:-\s*)?\d{1,3}(?:[\s\xa0]\d{3})+(?:,\d+)?|(?:-\s*)?\d+(?:,\d+)?", s)
+            szamok_raw = re.findall(egyes_szam_minta, s)
             szamok = list(x for x in (_hu_szam(r) for r in szamok_raw) if x is not None)
             if szamok:
-                pod_brutto = int(round(szamok[-1]))
+                pod_brutto = int(round(next(reversed(szamok))))
             break
 
     if pod_brutto == 0 and tetelek_df is not None:
@@ -282,7 +308,8 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
         if van_pod or not osszevont_blokkok:
             osszevont_blokkok.append(list(blokk))
         else:
-            osszevont_blokkok[-1].extend(blokk)
+            utolso_blokk = next(reversed(osszevont_blokkok))
+            utolso_blokk.extend(blokk)
 
     pod_adatok = dict()
     for blokk in osszevont_blokkok:
@@ -299,6 +326,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
         adat["ig"] = pod_adatok[elso_pod]["ig"]
         adat["tetelek_df"] = pod_adatok[elso_pod]["tetelek_df"]
     return adat
+
 
 
 
