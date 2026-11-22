@@ -543,8 +543,16 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
         if not szavak:
             continue
 
+        x_nev_max = min((x0 for x0, y0, _, _, szo, *_ in szavak if "fogyasztási" in szo.lower() and 150.0 < y0 < 400.0), default=145.0) - 4.0
+        x_szorzo_min = min((x0 for x0, y0, _, _, szo, *_ in szavak if "szorzó" in szo.lower() and 150.0 < y0 < 400.0), default=215.0) - 6.0
+        x_menny_min = min((x0 for x0, y0, _, _, szo, *_ in szavak if "mennyisége" in szo.lower() and 150.0 < y0 < 400.0), default=250.0) - 8.0
+        x_ar_min = min((x0 for x0, y0, _, _, szo, *_ in szavak if "egységára" in szo.lower() and 150.0 < y0 < 400.0), default=325.0) - 8.0
+        x_netto_min = min((x0 for x0, y0, _, _, szo, *_ in szavak if szo.lower() == "díj" and x0 > 380.0 and 150.0 < y0 < 400.0), default=415.0) - 12.0
+        x_afa_min = min((x0 for x0, y0, _, _, szo, *_ in szavak if "áfa" in szo.lower() and x0 > 450.0 and 150.0 < y0 < 400.0), default=475.0) - 8.0
+        x_brutto_min = min((x0 for x0, y0, _, _, szo, *_ in szavak if "bruttó" in szo.lower() and x0 > 490.0 and 150.0 < y0 < 400.0), default=505.0) - 8.0
+
         sorok_y = list()
-        rendezett = sorted(szavak, key=lambda w: (round(w[1] / 3.0), w[0]))
+        rendezett = sorted(szavak, key=lambda w: (round(w / 3.0), w))
         _, akt_y, *_ = next(iter(rendezett))
         akt_szavak = list()
         for x0, y0, _, _, szo, *_ in rendezett:
@@ -572,7 +580,7 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
             elif ("bruttó számlaérték" in s_low or "számla áfa összesítője" in s_low or "hőközponti és épület" in s_low) and y_val < y_vege:
                 y_vege = y_val
 
-        menny_szavak = list((x0, y0, szo) for x0, y0, _, _, szo, *_ in szavak if 285.0 <= x0 <= 372.0 and y0 < y_vege)
+        menny_szavak = list((x0, y0, szo) for x0, y0, _, _, szo, *_ in szavak if x_menny_min <= x0 < x_ar_min and y0 < y_vege)
         if not menny_szavak:
             continue
 
@@ -581,7 +589,7 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
         _, m_akt_y, _ = next(iter(menny_rend))
         m_akt = list()
         for x0, y0, szo in menny_rend:
-            if abs(y0 - m_akt_y) <= 4.0:
+            if abs(y0 - m_akt_y) <= 4.5:
                 m_akt.append((x0, szo))
             else:
                 m_akt.sort(key=_rendez_x_szo)
@@ -606,23 +614,23 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
                 if ky < y_row:
                     aktiv_kat = k_nev
 
-            bal_sz = list((round(y0 / 4.0), x0, szo) for x0, y0, _, _, szo, *_ in szavak if x0 < 176.0 and abs(y0 - y_row) <= 8.0)
+            bal_sz = list((round(y0 / 4.0), x0, szo) for x0, y0, _, _, szo, *_ in szavak if x0 <= x_nev_max and abs(y0 - y_row) <= 9.0)
             bal_sz.sort(key=_rendez_sor_x_szo)
             nev_nyers = " ".join(s for _, _, s in bal_sz).strip()
             if not nev_nyers or "összesen" in nev_nyers.lower() or "fizetendő" in nev_nyers.lower() or "tétel" in nev_nyers.lower():
                 continue
 
-            szorzo_sz = list((x0, szo) for x0, y0, _, _, szo, *_ in szavak if 248.0 <= x0 < 285.0 and abs(y0 - y_row) <= 6.0)
+            szorzo_sz = list((x0, szo) for x0, y0, _, _, szo, *_ in szavak if x_szorzo_min <= x0 < x_menny_min and abs(y0 - y_row) <= 7.0)
             szorzo_sz.sort(key=_rendez_x_szo)
             szorzo = _hu_szam(" ".join(s for _, s in szorzo_sz)) or 1.0
 
-            ar_sz = list((x0, szo) for x0, y0, _, _, szo, *_ in szavak if 368.0 <= x0 < 448.0 and abs(y0 - y_row) <= 6.0)
+            ar_sz = list((x0, szo) for x0, y0, _, _, szo, *_ in szavak if x_ar_min <= x0 < x_netto_min and abs(y0 - y_row) <= 7.0)
             ar_sz.sort(key=_rendez_x_szo)
             ar_szoveg = " ".join(s for _, s in ar_sz)
             am = ar_re.search(ar_szoveg)
             ar = _hu_szam(am.group(1)) if am else _hu_szam(re.sub(r"Ft.*", "", ar_szoveg))
 
-            afa_sz = list((x0, szo) for x0, y0, _, _, szo, *_ in szavak if 498.0 <= x0 < 528.0 and abs(y0 - y_row) <= 6.0)
+            afa_sz = list((x0, szo) for x0, y0, _, _, szo, *_ in szavak if x_afa_min <= x0 < x_brutto_min and abs(y0 - y_row) <= 7.0)
             afa_sz.sort(key=_rendez_x_szo)
             afa_szoveg = " ".join(s for _, s in afa_sz).strip()
             if afa_szoveg in ("27", "5", "18", "0"):
@@ -638,6 +646,7 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
+
 
 
 def feldolgoz_pdf(fajl):
