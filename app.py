@@ -331,6 +331,18 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
         adat["pod"] = elso_pod
 
 
+def _rendez_yx_szo(elem):
+    x0, y0, _ = elem
+    return (round(y0 / 3.0), x0)
+
+def _rendez_x_szo(elem):
+    x0, _ = elem
+    return x0
+
+def _rendez_sor_x_szo(elem):
+    sor_y, x0, _ = elem
+    return (sor_y, x0)
+
 def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
     szoveg_low = szoveg.lower()
     if "tiszamenti" in szoveg_low or "11265832" in szoveg_low or "trvzrt" in szoveg_low:
@@ -400,7 +412,7 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         if not jobb_szavak:
             continue
 
-        rendezett = sorted(jobb_szavak, key=lambda item: (round(item / 3.0), item))
+        rendezett = sorted(jobb_szavak, key=_rendez_yx_szo)
         _, akt_y, _ = next(iter(rendezett))
         akt_szavak = list()
         sorok_y = list()
@@ -408,12 +420,12 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
             if abs(y0 - akt_y) <= 3.5:
                 akt_szavak.append((x0, szo))
             else:
-                akt_szavak.sort(key=lambda item: item)
+                akt_szavak.sort(key=_rendez_x_szo)
                 sorok_y.append((akt_y, " ".join(sszo for _, sszo in akt_szavak)))
                 akt_y = y0
                 akt_szavak = [(x0, szo)]
         if akt_szavak:
-            akt_szavak.sort(key=lambda item: item)
+            akt_szavak.sort(key=_rendez_x_szo)
             sorok_y.append((akt_y, " ".join(sszo for _, sszo in akt_szavak)))
 
         horgonyok = list()
@@ -445,7 +457,7 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
                 legkozelebbi["szavak"].append((round(y0 / 4.0), x0, szo))
 
         for h in horgonyok:
-            h["szavak"].sort(key=lambda item: (item, item))
+            h["szavak"].sort(key=_rendez_sor_x_szo)
             nev = " ".join(s for _, _, s in h["szavak"]).replace("- ", "-").strip() or "Víziközmű díjtétel"
             if h["menny"] is not None and h["ar"] is not None:
                 talalatok.append({"Megnevezés": nev, "Mennyiség": h["menny"], "Mértékegység": h["me"], "Nettó egységár": h["ar"], "ÁFA (%)": h["afa"]})
