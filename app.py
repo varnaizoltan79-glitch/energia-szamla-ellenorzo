@@ -1090,7 +1090,6 @@ def mutat_kimutatasok():
         ea_df = pd.DataFrame(ea_sorok).groupby(["Elszámolási hónap", "Felhasználási hely"], as_index=False)[["Nettó", "kWh"]].sum()
         ea_df = ea_df[ea_df["kWh"] > 0].copy()
         if ea_df.empty:
-                    if ea_df.empty:
             st.info("Nincs fogyasztás alapú (kWh vagy m³) díjtétel a kiválasztott számlákban.")
         else:
             ea_df["Szumma nettó egységár (Ft/egység)"] = (ea_df["Nettó"] / ea_df["kWh"]).round(2)
