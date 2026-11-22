@@ -38,7 +38,19 @@ def szamol_elszamolasi_honap(ig_datum):
         if ho == 0:
             ho = 12
             ev -= 1
-    return f"{ev}-{ho:02d} ({ev}. {HONAPOK_HU[ho]})"
+    return f"{ev}. {HONAPOK_HU[ho]}"
+
+def tiszta_honap(cimke):
+    if not cimke:
+        return "Nincs megadva"
+    m = re.search(r"\((\d{4}\.\s*[a-záéíóöőúüű]+)\)", cimke)
+    return m.group(1) if m else cimke
+
+def honap_kulcs(cimke):
+    m = re.match(r"(\d{4})\.\s*([a-záéíóöőúüű]+)", cimke)
+    if m and m.group(2) in HONAPOK_HU:
+        return (int(m.group(1)), HONAPOK_HU.index(m.group(2)))
+    return (9999, 99)
 
 @st.dialog("📄 Számla PDF előnézet", width="large")
 def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
@@ -124,7 +136,7 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl):
             fnev = f"{date.today().year}_{uj_szamla['szamlaszam'].replace('/', '_')}.pdf"
             supabase.storage.from_("szamlak-pdf").upload(path=fnev, file=fajl.read(), file_options={"content-type": "application/pdf", "upsert": "true"})
             supabase.table("szamlak").update({"pdf_utvonal": fnev}).eq("id", sid).execute()
-        st.session_state["utolso_mentes"] = f"✅ A számla rögzítése megtörtént! (Számlaszám: {uj_szamla['szamlaszam']}, Elszámolási hónap: {uj_szamla['elszamolasi_honap']}, ID: #{sid})"
+        st.session_state["utolso_mentes"] = f"✅ A számla rögzítése megtörtént (Számlaszám: {uj_szamla['szamlaszam']}, Elszámolási hónap: {uj_szamla['elszamolasi_honap']}, ID: #{sid})"
         urit_urlap()
         st.rerun()
     except Exception as hiba:
@@ -148,7 +160,7 @@ if menu == "📊 Kimutatások és Riportok":
     h_map = {h["id"]: h["megnevezes"] for h in (supabase.table("felhasznalasi_helyek").select("id, megnevezes").execute().data or list())}
     sz_map = {s["id"]: s["nev"] for s in (supabase.table("szolgaltatok").select("id, nev").execute().data or list())}
 
-    osszes_honap = sorted(list({s.get("elszamolasi_honap") or "Nincs megadva" for s in lista}), reverse=True)
+    osszes_honap = sorted(list({tiszta_honap(s.get("elszamolasi_honap")) for s in lista}), key=honap_kulcs, reverse=True)
     osszes_hely = sorted(list({h_map.get(s["felhasznalasi_hely_id"], "Ismeretlen") for s in lista}))
 
     fs1, fs2 = st.columns(2)
@@ -157,7 +169,7 @@ if menu == "📊 Kimutatások és Riportok":
 
     szurt_lista = list()
     for s in lista:
-        ho_cimke = s.get("elszamolasi_honap") or "Nincs megadva"
+        ho_cimke = tiszta_honap(s.get("elszamolasi_honap"))
         hely_cimke = h_map.get(s["felhasznalasi_hely_id"], "Ismeretlen")
         if val_honapok and ho_cimke not in val_honapok:
             continue
@@ -169,7 +181,7 @@ if menu == "📊 Kimutatások és Riportok":
         st.warning("A megadott szűrőkkel nincs találat.")
         st.stop()
 
-    sorok = list({"Számlaszám": s["szamlaszam"], "Elszámolási hónap": s.get("elszamolasi_honap") or "Nincs megadva", "Felhasználási hely": h_map.get(s["felhasznalasi_hely_id"], ""), "Szolgáltató": sz_map.get(s["szolgaltato_id"], ""), "Időszak kezdete": s["idoszak_tol"], "Időszak vége": s["idoszak_ig"], "Bruttó összeg (Ft)": float(s["szamlan_szereplo_brutto"]), "Státusz": s["ellenorzes_statusz"], "PDF fájl": s["pdf_utvonal"]} for s in szurt_lista)
+    sorok = list({"Számlaszám": s["szamlaszam"], "Elszámolási hónap": tiszta_honap(s.get("elszamolasi_honap")), "Felhasználási hely": h_map.get(s["felhasznalasi_hely_id"], ""), "Szolgáltató": sz_map.get(s["szolgaltato_id"], ""), "Időszak kezdete": s["idoszak_tol"], "Időszak vége": s["idoszak_ig"], "Bruttó összeg (Ft)": float(s["szamlan_szereplo_brutto"]), "Státusz": s["ellenorzes_statusz"], "PDF fájl": s["pdf_utvonal"]} for s in szurt_lista)
     df = pd.DataFrame(sorok)
 
     k1, k2, k3 = st.columns(3)
@@ -180,6 +192,7 @@ if menu == "📊 Kimutatások és Riportok":
     tab_ho, tab_hely = st.tabs(list(("📅 Havi bontású költségek", "🏭 Telephelyek szerinti összesítés")))
     with tab_ho:
         havi_pivot = df.pivot_table(index="Elszámolási hónap", columns="Felhasználási hely", values="Bruttó összeg (Ft)", aggfunc="sum", fill_value=0.0)
+        havi_pivot = havi_pivot.reindex(sorted(havi_pivot.index, key=honap_kulcs))
         st.bar_chart(havi_pivot)
     with tab_hely:
         st.bar_chart(df.groupby("Felhasználási hely")["Bruttó összeg (Ft)"].sum())
@@ -199,7 +212,7 @@ if menu == "📊 Kimutatások és Riportok":
 
     st.divider()
     st.subheader("🗑️ Számla törlése")
-    torles_opciok = {f"#{s['id']} – {s['szamlaszam']} ({s.get('elszamolasi_honap') or ''}, {h_map.get(s['felhasznalasi_hely_id'], '')}, {float(s['szamlan_szereplo_brutto']):,.0f} Ft)": s for s in szurt_lista}
+    torles_opciok = {f"#{s['id']} – {s['szamlaszam']} ({tiszta_honap(s.get('elszamolasi_honap'))}, {h_map.get(s['felhasznalasi_hely_id'], '')}, {float(s['szamlan_szereplo_brutto']):,.0f} Ft)": s for s in szurt_lista}
     valasztott_torles = st.selectbox("Válaszd ki a törlendő számlát:", list(torles_opciok.keys()))
     if st.button("🗑️ Kiválasztott számla végleges törlése"):
         kiv = torles_opciok[valasztott_torles]
