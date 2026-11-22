@@ -489,7 +489,7 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
         m_az = re.search(r"(U\d{5,}\s*-\s*F\d{4,})", szoveg, re.I)
     m_hk = re.search(r"Hőközpont\s*azonosító\s*:?\s*([A-Z0-9-]+)", szoveg, re.I)
     if m_az:
-        adat["pod"] = re.sub(r"\s+", "", m_az.group(1)).upper()
+        adat["pod"] = re.sub(r"\s*-\s*", " - ", m_az.group(1).strip()).upper()
     elif m_hk:
         adat["pod"] = m_hk.group(1).strip()
 
