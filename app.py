@@ -471,6 +471,10 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
 
+def _rendez_tavho_szo(w):
+    x0, y0, *_ = w
+    return (y0, x0)
+
 def _feldolgoz_tavho_pdf(dok, szoveg, adat):
     szoveg_low = szoveg.lower()
     if "nyírtávhő" in szoveg_low or "nyíregyházi távhő" in szoveg_low or "11241256" in szoveg_low or "nyirtavho" in szoveg_low:
@@ -543,14 +547,14 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
         if not szavak:
             continue
 
-        rendezett = sorted(szavak, key=lambda w: (round(w[1] / 6.0), w[0]))
+        rendezett = sorted(szavak, key=_rendez_tavho_szo)
         _, akt_y, *_ = next(iter(rendezett))
         akt_szavak = list()
         tablazat_sorok = list()
         for x0, y0, _, _, szo, *_ in rendezett:
             if x0 > 555.0:
                 continue
-            if abs(y0 - akt_y) <= 7.0:
+            if abs(y0 - akt_y) <= 6.5:
                 akt_szavak.append((x0, szo))
             else:
                 akt_szavak.sort(key=_rendez_x_szo)
