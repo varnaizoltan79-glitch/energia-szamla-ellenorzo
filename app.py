@@ -179,19 +179,21 @@ def mutat_torzsadatok():
                     supabase.table("helyettesitesek").insert({"helyettesitett_energetikus_id": aktiv_user_opciok[kit], "helyettesito_energetikus_id": aktiv_user_opciok[kivel], "felhasznalasi_hely_id": hely_valasztek[melyik_hely], "kezdet_datum": h_tol.isoformat(), "vege_datum": h_ig.isoformat(), "aktiv": True}).execute()
                     st.rerun()
     with t_hely:
+        energia_opciok = list(("Villamos energia", "Földgáz", "Távhő", "Víziközmű", "PB-gáz"))
         if osszes_hely:
-            st.dataframe(pd.DataFrame(list({"ID": h["id"], "Megnevezés": h["megnevezes"], "POD / EIC": h["pod_eic_azonosito"], "Felelős": u_map.get(h.get("felelos_energetikus_id"), ""), "Állandó helyettes": u_map.get(h.get("allando_helyettes_id"), "Nincs")} for h in osszes_hely)), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(list({"ID": h["id"], "Megnevezés": h["megnevezes"], "Energiatípus": h.get("energiatipus") or "", "POD / EIC": h["pod_eic_azonosito"], "Felelős": u_map.get(h.get("felelos_energetikus_id"), ""), "Állandó helyettes": u_map.get(h.get("allando_helyettes_id"), "Nincs")} for h in osszes_hely)), use_container_width=True, hide_index=True)
         with st.form("uj_hely_form"):
-            fc1, fc2 = st.columns(2)
+            fc1, fc2, fc3 = st.columns(3)
             uj_h_nev = fc1.text_input("Megnevezés:")
-            uj_h_pod = fc2.text_input("POD / EIC azonosító:")
+            uj_h_energia = fc2.selectbox("Energiatípus:", energia_opciok)
+            uj_h_pod = fc3.text_input("POD / EIC azonosító:")
             fel_opc = {"Nincs kijelölve": None}
             fel_opc.update(aktiv_user_opciok)
-            fc3, fc4 = st.columns(2)
-            uj_h_fel = fc3.selectbox("Felelős energetikus:", list(fel_opc.keys()))
-            uj_h_helyett = fc4.selectbox("Állandó helyettes:", list(fel_opc.keys()))
+            fc4, fc5 = st.columns(2)
+            uj_h_fel = fc4.selectbox("Felelős energetikus:", list(fel_opc.keys()))
+            uj_h_helyett = fc5.selectbox("Állandó helyettes:", list(fel_opc.keys()))
             if st.form_submit_button("💾 Felhasználási hely mentése", type="primary") and uj_h_nev.strip() and uj_h_pod.strip():
-                supabase.table("felhasznalasi_helyek").insert({"megnevezes": uj_h_nev.strip(), "pod_eic_azonosito": uj_h_pod.strip(), "felelos_energetikus_id": fel_opc[uj_h_fel], "allando_helyettes_id": fel_opc[uj_h_helyett], "aktiv": True}).execute()
+                supabase.table("felhasznalasi_helyek").insert({"megnevezes": uj_h_nev.strip(), "energiatipus": uj_h_energia, "pod_eic_azonosito": uj_h_pod.strip(), "felelos_energetikus_id": fel_opc[uj_h_fel], "allando_helyettes_id": fel_opc[uj_h_helyett], "aktiv": True}).execute()
                 st.rerun()
     with t_user:
         if osszes_user:
