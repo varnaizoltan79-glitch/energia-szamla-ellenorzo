@@ -1,3 +1,4 @@
+import base64
 import re
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -22,6 +23,14 @@ if "form_ver" not in st.session_state:
 
 def urit_urlap():
     st.session_state["form_ver"] += 1
+
+@st.dialog("📄 Számla PDF előnézet", width="large")
+def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
+    st.subheader(f"Számlaszám: {szamlaszam} ({pdf_utvonal})")
+    pdf_bytes = supabase.storage.from_("szamlak-pdf").download(pdf_utvonal)
+    b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    st.markdown(f'<iframe src="data:application/pdf;base64,{b64}" width="100%" height="650px" type="application/pdf"></iframe>', unsafe_allow_html=True)
+    st.download_button("📥 PDF letöltése a gépre", data=pdf_bytes, file_name=pdf_utvonal, mime="application/pdf")
 
 def feldolgoz_pdf(fajl):
     reader = PdfReader(fajl)
@@ -124,9 +133,29 @@ if menu == "📊 Kimutatások és Riportok":
     sorok = list({"Számlaszám": s["szamlaszam"], "Felhasználási hely": h_map.get(s["felhasznalasi_hely_id"], ""), "Szolgáltató": sz_map.get(s["szolgaltato_id"], ""), "Időszak kezdete": s["idoszak_tol"], "Időszak vége": s["idoszak_ig"], "Fizetési határidő": s["fizetesi_hatarido"], "Bruttó összeg (Ft)": float(s["szamlan_szereplo_brutto"]), "Státusz": s["ellenorzes_statusz"], "PDF fájl": s["pdf_utvonal"]} for s in lista)
     df = pd.DataFrame(sorok)
     st.bar_chart(df.groupby("Felhasználási hely")["Bruttó összeg (Ft)"].sum())
-    st.dataframe(df, use_container_width=True)
+    st.caption("💡 Kattints egy sor elejére a táblázatban a csatolt PDF számla megnyitásához!")
+    esemeny = st.dataframe(df, use_container_width=True, on_select="rerun", selection_mode="single-row")
+    if esemeny.selection.rows:
+        kiv_idx = esemeny.selection.rows[0]
+        kiv_szamla = lista[kiv_idx]
+        if kiv_szamla.get("pdf_utvonal"):
+            mutat_pdf_ablak(kiv_szamla["pdf_utvonal"], kiv_szamla["szamlaszam"])
+        else:
+            st.warning("Ehhez a számlához nem lett PDF fájl feltöltve.")
     csv = df.to_csv(index=False).encode("utf-8-sig")
     st.download_button("📥 Kimutatás letöltése Excelbe (CSV)", data=csv, file_name=f"energia_riport_{date.today()}.csv", mime="text/csv")
+    st.divider()
+    st.subheader("🗑️ Számla törlése")
+    torles_opciok = {f"#{s['id']} – {s['szamlaszam']} ({h_map.get(s['felhasznalasi_hely_id'], '')}, {float(s['szamlan_szereplo_brutto']):,.0f} Ft)": s for s in lista}
+    valasztott_torles = st.selectbox("Válaszd ki a törlendő számlát:", list(torles_opciok.keys()))
+    if st.button("🗑️ Kiválasztott számla végleges törlése"):
+        kiv = torles_opciok[valasztott_torles]
+        supabase.table("szamla_tetelek").delete().eq("szamla_id", kiv["id"]).execute()
+        if kiv.get("pdf_utvonal"):
+            supabase.storage.from_("szamlak-pdf").remove(list((kiv["pdf_utvonal"],)))
+        supabase.table("szamlak").delete().eq("id", kiv["id"]).execute()
+        st.success(f"✅ A(z) {kiv['szamlaszam']} számú számla sikeresen törölve lett!")
+        st.rerun()
     st.stop()
 
 fv = st.session_state["form_ver"]
@@ -143,7 +172,6 @@ helyek = get_helyek(user_id)
 if not helyek:
     st.warning("Nincs hozzád rendelt felhasználási hely a rendszerben.")
     st.stop()
-
 fajl = st.file_uploader("1. Húzd ide a számlát (PDF vagy Excel/CSV) – opcionális", type=list(("pdf", "xlsx", "csv")), key=f"fajl_{fv}")
 f_id = f"{fv}_{fajl.name}" if fajl else f"{fv}_ures"
 pdf_adat = None
