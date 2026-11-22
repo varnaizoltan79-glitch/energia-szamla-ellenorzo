@@ -788,7 +788,7 @@ def mutat_torzsadatok():
                         st.rerun()
 
 def _betolt_szurt_szamlak(kulcs_prefix):
-    lista = supabase.table("szamlak").select("*").order("jovahagyas_ideje", desc=True).execute().data or list()
+    lista = supabase.table("szamlak").select("*").order("id", desc=True).execute().data or list()
     if not lista:
         st.info("Még nincs mentett számla.")
         return None, None, None, None, None, None, None
@@ -817,6 +817,8 @@ def _betolt_szurt_szamlak(kulcs_prefix):
     if not szurt_lista:
         st.warning("A megadott szűrőkkel nincs találat.")
         return None, None, None, None, None, None, None
+
+    szurt_lista.sort(key=lambda s: (honap_kulcs(tiszta_honap(s.get("elszamolasi_honap"))), int(s["id"])), reverse=True)
 
     szamla_idk = list(s["id"] for s in szurt_lista)
     osszes_tetel = supabase.table("szamla_tetelek").select("*").in_("szamla_id", szamla_idk).execute().data or list()
