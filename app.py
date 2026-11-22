@@ -327,16 +327,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
         adat["pod_adatok"] = pod_adatok
         elso_pod = next(iter(pod_adatok.keys()))
         adat["pod"] = elso_pod
-        adat["brutto"] = pod_adatok[elso_pod]["brutto"]
-        adat["tol"] = pod_adatok[elso_pod]["tol"]
-        adat["ig"] = pod_adatok[elso_pod]["ig"]
-        adat["tetelek_df"] = pod_adatok[elso_pod]["tetelek_df"]
-    return adat
-
-
-
-
-def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
+       def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
     adat["szolgaltato_kulcs"] = "vízmű"
     m_sz = re.search(r"Számla\s*sorszáma\s*:?\s*([A-Z0-9/-]{6,})", szoveg, re.I)
     if m_sz:
@@ -380,25 +371,24 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         if not szavak:
             continue
 
-        jobb_szavak = list(w for w in szavak if w >= 320.0)
+        jobb_szavak = list((x0, y0, szo) for x0, y0, _, _, szo, *_ in szavak if x0 >= 320.0)
         if not jobb_szavak:
             continue
 
-        rendezett = sorted(jobb_szavak, key=lambda w: (round(w / 3.0), w))
-        _, akt_y, *_ = next(iter(rendezett))
+        rendezett = sorted(jobb_szavak, key=lambda item: (round(item[1] / 3.0), item[0]))
+        _, akt_y, _ = next(iter(rendezett))
         akt_szavak = list()
         sorok_y = list()
-        for w in rendezett:
-            x0, y0, _, _, szo, *_ = w
+        for x0, y0, szo in rendezett:
             if abs(y0 - akt_y) <= 3.5:
                 akt_szavak.append((x0, szo))
             else:
-                akt_szavak.sort(key=lambda item: item)
+                akt_szavak.sort(key=lambda item: item[0])
                 sorok_y.append((akt_y, " ".join(sszo for _, sszo in akt_szavak)))
                 akt_y = y0
                 akt_szavak = [(x0, szo)]
         if akt_szavak:
-            akt_szavak.sort(key=lambda item: item)
+            akt_szavak.sort(key=lambda item: item[0])
             sorok_y.append((akt_y, " ".join(sszo for _, sszo in akt_szavak)))
 
         horgonyok = list()
@@ -420,8 +410,7 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         elso_y = elso_horgony["y"]
         utolso_y = utolso_horgony["y"]
 
-        for w in szavak:
-            x0, y0, _, _, szo, *_ = w
+        for x0, y0, _, _, szo, *_ in szavak:
             if x0 > 205.0:
                 continue
             if not (elso_y - 18.0 <= y0 <= utolso_y + 18.0):
@@ -431,7 +420,7 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
                 legkozelebbi["szavak"].append((round(y0 / 4.0), x0, szo))
 
         for h in horgonyok:
-            h["szavak"].sort(key=lambda item: (item, item))
+            h["szavak"].sort(key=lambda item: (item[0], item[1]))
             nev = " ".join(s for _, _, s in h["szavak"]).replace("- ", "-").strip() or "Víziközmű díjtétel"
             if h["menny"] is not None and h["ar"] is not None:
                 talalatok.append({"Megnevezés": nev, "Mennyiség": h["menny"], "Mértékegység": h["me"], "Nettó egységár": h["ar"], "ÁFA (%)": h["afa"]})
@@ -439,6 +428,15 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
+ adat["brutto"] = pod_adatok[elso_pod]["brutto"]
+        adat["tol"] = pod_adatok[elso_pod]["tol"]
+        adat["ig"] = pod_adatok[elso_pod]["ig"]
+        adat["tetelek_df"] = pod_adatok[elso_pod]["tetelek_df"]
+    return adat
+
+
+
+
 
 def feldolgoz_pdf(fajl):
     pdf_bytes = fajl.read()
