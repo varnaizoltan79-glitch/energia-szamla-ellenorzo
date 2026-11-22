@@ -359,7 +359,6 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
     else:
         adat["szolgaltato_kulcs"] = "debreceni vízmű"
 
-
     m_sz = re.search(r"Számla\s*sorszáma\s*:?\s*([A-Z0-9/-]{6,})", szoveg, re.I)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
@@ -375,14 +374,12 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
     elif m_az and not adat["pod"]:
         adat["pod"] = m_az.group(1).strip()
 
-        m_ido = re.search(r"(?:Elszámolási|Elszámolt)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–.]+\s*(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
+    m_ido = re.search(r"(?:Elszámolási|Elszámolt)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–.]+\s*(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
     if not m_ido:
         m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", szoveg)
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
-
-
 
     m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", szoveg, re.I)
     if m_k:
@@ -402,6 +399,7 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         br_val = _hu_szam(m_br.group(1))
         if br_val:
             adat["brutto"] = int(round(br_val))
+
 
     egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?"
     me_minta = r"(m3|m³|hó|db|kWh|MWh)"
