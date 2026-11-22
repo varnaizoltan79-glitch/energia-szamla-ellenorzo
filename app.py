@@ -367,7 +367,7 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
 
     egyes_szam = r"-?\d{1,3}(?: \d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?"
     me_minta = r"(m3|m³|hó|db|kWh|MWh)"
-    tetel_minta = re.compile(rf"(?:^|\s{{2,}})({egyes_szam})\s*{me_minta}\s+({egyes_szam})\s*Ft\s+({egyes_szam})\s+(27|5|18|0|AHK)\b")
+    tetel_minta = re.compile(rf"({egyes_szam})\s*{me_minta}\s+({egyes_szam})\s*Ft\s+({egyes_szam})\s+(27|5|18|0|AHK)\b")
 
     talalatok = list()
     for oldal in dok:
@@ -379,46 +379,28 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         if not szavak:
             continue
 
-        y_fejlec = max((w[3] for w in szavak if w[4] in ("megnevezése", "díj", "időszak") and w[1] < 450), default=240.0)
-        y_vege = min((w[1] for w in szavak if w[4] in ("Kerekítés", "Bruttó", "Fizetendő") and w[1] > y_fejlec + 20 and w[0] < 200), default=600.0)
-        x_idoszak_hatar = min((w[0] for w in szavak if re.match(r"^\d{4}\.\d{2}\.\d{2}", w[4]) and y_fejlec < w[1] < y_vege), default=205.0)
-
         sorok_y = list()
         rendezett = sorted(szavak, key=lambda w: (round(w[1] / 3.0), w[0]))
         _, akt_y, *_ = next(iter(rendezett))
         akt_szavak = list()
         for w in rendezett:
-            x0, y0, x1, _, szo = w[:5]
+            x0, y0, x1, _, szo, *_ = w
             if abs(y0 - akt_y) <= 3.5:
                 akt_szavak.append((x0, x1, szo))
             else:
                 akt_szavak.sort(key=lambda item: item[0])
-                reszek = list()
-                elozo_x1 = None
-                for sx0, sx1, sszo in akt_szavak:
-                    if elozo_x1 is not None:
-                        reszek.append("  " if (sx0 - elozo_x1) > 8.5 else " ")
-                    reszek.append(sszo)
-                    elozo_x1 = sx1
-                sorok_y.append((akt_y, "".join(reszek)))
+                sorok_y.append((akt_y, " ".join(sszo for _, _, sszo in akt_szavak)))
                 akt_y = y0
                 akt_szavak = [(x0, x1, szo)]
         if akt_szavak:
             akt_szavak.sort(key=lambda item: item[0])
-            reszek = list()
-            elozo_x1 = None
-            for sx0, sx1, sszo in akt_szavak:
-                if elozo_x1 is not None:
-                    reszek.append("  " if (sx0 - elozo_x1) > 8.5 else " ")
-                reszek.append(sszo)
-                elozo_x1 = sx1
-            sorok_y.append((akt_y, "".join(reszek)))
+            sorok_y.append((akt_y, " ".join(sszo for _, _, sszo in akt_szavak)))
 
         horgonyok = list()
         for y_val, sor_sz in sorok_y:
-            if not (y_fejlec < y_val < y_vege):
-                continue
-            m = tetel_minta.search(sor_sz)
+            tisztitott_sor = re.sub(r"\d{4}\.\d{2}\.\d{2}\s*[-–]\s*\d{4}\.\d{2}\.\d{2}", " ", sor_sz)
+            tisztitott_sor = re.sub(r"\b\d+\s*[-–]\s*\d+\b", " ", tisztitott_sor)
+            m = tetel_minta.search(tisztitott_sor)
             if m:
                 menny = _hu_szam(m.group(1))
                 me = m.group(2).replace("m³", "m3")
@@ -430,16 +412,21 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         if not horgonyok:
             continue
 
-        bal_szavak = list(w for w in szavak if y_fejlec < w[1] < y_vege and w[2] <= x_idoszak_hatar - 2.0)
-        for w in bal_szavak:
-            x0, y0, _, _, szo = w[:5]
+        elso_y = horgonyok[0]["y"]
+        utolso_y = horgonyok[-1]["y"]
+        for w in szavak:
+            x0, y0, _, _, szo, *_ = w
+            if x0 > 212.0:
+                continue
+            if not (elso_y - 18.0 <= y0 <= utolso_y + 18.0):
+                continue
             legkozelebbi = min(horgonyok, key=lambda h: abs(h["y"] - y0))
-            if abs(legkozelebbi["y"] - y0) <= 22.0:
+            if abs(legkozelebbi["y"] - y0) <= 18.0:
                 legkozelebbi["szavak"].append((round(y0 / 4.0), x0, szo))
 
         for h in horgonyok:
             h["szavak"].sort(key=lambda item: (item[0], item[1]))
-            nev = " ".join(item[2] for item in h["szavak"]).replace("- ", "-").strip() or "Víziközmű díjtétel"
+            nev = " ".join(s for _, _, s in h["szavak"]).replace("- ", "-").strip() or "Víziközmű díjtétel"
             if h["menny"] is not None and h["ar"] is not None:
                 talalatok.append({"Megnevezés": nev, "Mennyiség": h["menny"], "Mértékegység": h["me"], "Nettó egységár": h["ar"], "ÁFA (%)": h["afa"]})
 
