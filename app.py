@@ -145,6 +145,46 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl):
         st.rerun()
     except Exception as hiba:
         st.error(f"Pontos hiba oka: {hiba}")
+
+def mutat_torzsadatok():
+    st.header("⚙️ Törzsadatok és Helyettesítések kezelése")
+    osszes_user = supabase.table("energetikusok").select("*").order("nev").execute().data or list()
+    u_map = {u["id"]: u["nev"] for u in osszes_user}
+    aktiv_user_opciok = {f"{u['nev']} ({u['szerepkor']})": u["id"] for u in osszes_user if u.get("aktiv")}
+    osszes_hely = supabase.table("felhasznalasi_helyek").select("*").order("megnevezes").execute().data or list()
+    h_map = {h["id"]: h["megnevezes"] for h in osszes_hely}
+
+    t_helyett, t_hely, t_user = st.tabs(list(("🔄 Helyettesítések", "🏭 Felhasználási helyek", "👤 Energetikusok")))
+
+    with t_helyett:
+        st.subheader("Aktív és rögzített helyettesítések")
+        helyett_lista = supabase.table("helyettesitesek").select("*").order("kezdet_datum", desc=True).execute().data or list()
+        if helyett_lista:
+            h_sorok = list({"ID": x["id"], "Helyettesített": u_map.get(x["helyettesitett_energetikus_id"], ""), "Helyettesítő": u_map.get(x["helyettesito_energetikus_id"], ""), "Felhasználási hely": h_map.get(x["felhasznalasi_hely_id"], "Minden telephelye"), "Kezdet": x["kezdet_datum"], "Vége": x["vege_datum"], "Aktív": x["aktiv"]} for x in helyett_lista)
+            st.dataframe(pd.DataFrame(h_sorok), use_container_width=True, hide_index=True)
+            torol_h = st.selectbox("Helyettesítés törlése:", list(f"#{x['id']} – {u_map.get(x['helyettesitett_energetikus_id'], '')} -> {u_map.get(x['helyettesito_energetikus_id'], '')} ({x['kezdet_datum']} - {x['vege_datum']})" for x in helyett_lista))
+            if st.button("🗑️ Kiválasztott helyettesítés törlése"):
+                hid = int(torol_h.split(" – ")[0].replace("#", ""))
+                supabase.table("helyettesitesek").delete().eq("id", hid).execute()
+                st.success("✅ Helyettesítés törölve!")
+                st.rerun()
+        else:
+            st.info("Még nincs rögzített helyettesítés.")
+
+        st.divider()
+        st.subheader("➕ Új helyettesítés rögzítése")
+        with st.form("uj_helyettesites_form"):
+            hc1, hc2 = st.columns(2)
+            kit = hc1.selectbox("Helyettesített energetikus (aki távol van):", list(aktiv_user_opciok.keys()))
+            kivel = hc2.selectbox("Helyettesítő energetikus (aki átveszi):", list(aktiv_user_opciok.keys()))
+            hely_valasztek = {"Minden telephelyére érvényes": None}
+            for h in osszes_hely:
+                hely_valasztek[f"{h['megnevezes']} ({h['pod_eic_azonosito']})"] = h["id"]
+            melyik_hely = st.selectbox("Érintett felhasználási hely:", list(hely_valasztek.keys()))
+            hd1, hd2 = st.columns(2)
+            h_tol = hd1.date_input("Helyettesítés kezdete", value=date.today())
+            h_ig = hd2.date_input("Helyettesítés vége", value=date.today())
+            if st.form_submit_button("💾 Helyettesítés mentése", type="primary"):
 st.sidebar.title("⚡ Energia Portál")
 users_data = supabase.table("energetikusok").select("id, nev, szerepkor").eq("aktiv", True).order("nev").execute().data or list()
 users_map = {u["nev"]: u for u in users_data}
@@ -153,7 +193,11 @@ user_sor = users_map[valasztott_nev]
 user_id = int(user_sor["id"])
 st.sidebar.info(f"Szerepkör: **{user_sor['szerepkor']}**")
 
-menu = st.sidebar.radio("Menü", list(("🧾 Számla ellenőrzés és feltöltés", "📊 Kimutatások és Riportok")), on_change=urit_urlap)
+menu = st.sidebar.radio("Menü", list(("🧾 Számla ellenőrzés és feltöltés", "📊 Kimutatások és Riportok", "⚙️ Törzsadatok és Helyettesítések")), on_change=urit_urlap)
+
+if menu == "⚙️ Törzsadatok és Helyettesítések":
+    mutat_torzsadatok()
+    st.stop()
 
 if menu == "📊 Kimutatások és Riportok":
     st.header("Rögzített számlák és havi kimutatások")
@@ -194,7 +238,7 @@ if menu == "📊 Kimutatások és Riportok":
     k3.metric("Érintett hónapok", f"{df['Elszámolási hónap'].nunique()} hónap")
 
     y_tengely = alt.Axis(format=",.0f", labelExpr="replace(datum.label, /,/g, ' ') + ' Ft'", title="Bruttó összeg (Ft)")
-    tab_ho, tab_hely = st.tabs(list(("📅 Havi bontású költségek", "🏭 Telephelyek szerinti összesítés")))
+    tab_ho, tab_hely, tab_tetel = st.tabs(list(("📅 Havi bontású költségek", "🏭 Telephelyek szerinti összesítés", "⚡ Fogyasztás (kWh) és Díjtételek")))
     with tab_ho:
         ho_df = df.groupby(["Elszámolási hónap", "Felhasználási hely"], as_index=False)["Bruttó összeg (Ft)"].sum()
         ho_df["Összeg"] = ho_df["Bruttó összeg (Ft)"].apply(ft_szoveg)
@@ -216,6 +260,54 @@ if menu == "📊 Kimutatások és Riportok":
             tooltip=[alt.Tooltip("Felhasználási hely:N", title="Felhasználási hely"), alt.Tooltip("Összeg:N", title="Bruttó összeg")]
         ).properties(height=360)
         st.altair_chart(graf_hely, use_container_width=True)
+    with tab_tetel:
+        szamla_map = {s["id"]: s for s in szurt_lista}
+        osszes_tetel = supabase.table("szamla_tetelek").select("*").in_("szamla_id", list(szamla_map.keys())).execute().data or list()
+        if not osszes_tetel:
+            st.info("A kiválasztott számlákhoz nem tartozik rögzített díjtétel.")
+        else:
+            t_sorok = list()
+            for t in osszes_tetel:
+                sz = szamla_map.get(t["szamla_id"], {})
+                t_sorok.append({
+                    "Elszámolási hónap": tiszta_honap(sz.get("elszamolasi_honap")),
+                    "Felhasználási hely": h_map.get(sz.get("felhasznalasi_hely_id"), ""),
+                    "Számlaszám": sz.get("szamlaszam", ""),
+                    "Díjtétel": t["megnevezes_eredeti"],
+                    "Mennyiség": float(t["mennyiseg"]),
+                    "Mértékegység": t["mertekegyseg"],
+                    "Nettó egységár (Ft)": float(t["egysegar_netto"]),
+                    "Nettó összeg (Ft)": int(round(float(t["szamitott_netto"]))),
+                    "Bruttó összeg (Ft)": int(round(float(t["szamitott_brutto"])))
+                })
+            t_df = pd.DataFrame(t_sorok)
+            tetel_nevek = sorted(list(t_df["Díjtétel"].unique()))
+            val_tetel = st.selectbox("🔍 Díjtétel kiválasztása a havi mennyiség és egységár összehasonlításához:", tetel_nevek)
+            szurt_t_df = t_df[t_df["Díjtétel"] == val_tetel].copy()
+            ho_sorrend_t = sorted(list(szurt_t_df["Elszámolási hónap"].unique()), key=honap_kulcs)
+            tc1, tc2 = st.columns(2)
+            with tc1:
+                st.caption(f"📊 Mennyiség alakulása – {val_tetel}")
+                graf_menny = alt.Chart(szurt_t_df).mark_bar().encode(
+                    x=alt.X("Elszámolási hónap:N", sort=ho_sorrend_t, axis=alt.Axis(labelAngle=0, title="Elszámolási hónap")),
+                    y=alt.Y("sum(Mennyiség):Q", axis=alt.Axis(format=",.0f", labelExpr="replace(datum.label, /,/g, ' ')", title="Mennyiség")),
+                    color=alt.Color("Felhasználási hely:N", title="Felhasználási hely"),
+                    xOffset="Felhasználási hely:N",
+                    tooltip=[alt.Tooltip("Elszámolási hónap:N"), alt.Tooltip("Felhasználási hely:N"), alt.Tooltip("sum(Mennyiség):Q", title="Mennyiség", format=",.0f"), alt.Tooltip("Mértékegység:N")]
+                ).properties(height=300)
+                st.altair_chart(graf_menny, use_container_width=True)
+            with tc2:
+                st.caption(f"💰 Nettó egységár (Ft) alakulása – {val_tetel}")
+                graf_ar = alt.Chart(szurt_t_df).mark_line(point=True).encode(
+                    x=alt.X("Elszámolási hónap:N", sort=ho_sorrend_t, axis=alt.Axis(labelAngle=0, title="Elszámolási hónap")),
+                    y=alt.Y("mean(Nettó egységár (Ft)):Q", axis=alt.Axis(title="Nettó egységár (Ft)")),
+                    color=alt.Color("Felhasználási hely:N", title="Felhasználási hely"),
+                    tooltip=[alt.Tooltip("Elszámolási hónap:N"), alt.Tooltip("Felhasználási hely:N"), alt.Tooltip("mean(Nettó egységár (Ft)):Q", title="Egységár (Ft)", format=",.4f")]
+                ).properties(height=300)
+                st.altair_chart(graf_ar, use_container_width=True)
+            st.dataframe(t_df, use_container_width=True, hide_index=True)
+            t_csv = t_df.to_csv(index=False).encode("utf-8-sig")
+            st.download_button("📥 Díjtételek letöltése Excelbe (CSV)", data=t_csv, file_name=f"dijtetelek_riport_{date.today()}.csv", mime="text/csv")
 
     st.caption("💡 Kattints egy sor elejére a táblázatban a csatolt PDF számla megnyitásához!")
     esemeny = st.dataframe(df, use_container_width=True, on_select="rerun", selection_mode="single-row")
@@ -243,7 +335,6 @@ if menu == "📊 Kimutatások és Riportok":
         st.success(f"✅ A(z) {kiv['szamlaszam']} számú számla sikeresen törölve lett!")
         st.rerun()
     st.stop()
-
 fv = st.session_state["form_ver"]
 col_fej, col_gomb = st.columns((4, 1))
 col_fej.header("Energiaszámla ellenőrzése és rögzítése")
@@ -315,3 +406,14 @@ elteres = abs(brutto_dec - ossz_brutto)
 m1, m2, m3 = st.columns(3)
 m1.metric("Számított Nettó", ft_szoveg(ossz_netto))
 m2.metric("Számított Bruttó", ft_szoveg(ossz_brutto))
+m3.metric("Eltérés a számlától", ft_szoveg(elteres))
+
+egyezik = (elteres <= Decimal("2")) and (len(tetelek) > 0) and (szamlan_brutto > 0) and datum_rendben
+if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
+if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha az összegek egyeznek és a dátumok helyesek.")
+
+gomb = st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary", disabled=not egyezik)
+forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
+stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
+uj_szamla = {"szamlaszam": szamlaszam, "szolgaltato_id": szolg_id, "felhasznalasi_hely_id": hely_id, "forras_tipus": forras, "szamla_kelte": kelte.isoformat(), "fizetesi_hatarido": hatarido.isoformat(), "idoszak_tol": tol.isoformat(), "idoszak_ig": ig.isoformat(), "elszamolasi_honap": elszamolasi_honap, "szamlan_szereplo_brutto": float(brutto_dec), "szamitott_brutto": float(ossz_brutto), "elteres": float(elteres), "ellenorzes_statusz": stat, "jovahagyta_energetikus_id": user_id}
+if gomb and egyezik: mentes_adatbazisba(uj_szamla, tetelek, fajl)
