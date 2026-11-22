@@ -145,7 +145,6 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl):
         st.rerun()
     except Exception as hiba:
         st.error(f"Pontos hiba oka: {hiba}")
-
 def mutat_torzsadatok():
     st.header("⚙️ Törzsadatok és Helyettesítések kezelése")
     osszes_user = supabase.table("energetikusok").select("*").order("nev").execute().data or list()
@@ -164,7 +163,7 @@ def mutat_torzsadatok():
             st.dataframe(pd.DataFrame(h_sorok), use_container_width=True, hide_index=True)
             torol_h = st.selectbox("Helyettesítés törlése:", list(f"#{x['id']} – {u_map.get(x['helyettesitett_energetikus_id'], '')} -> {u_map.get(x['helyettesito_energetikus_id'], '')} ({x['kezdet_datum']} - {x['vege_datum']})" for x in helyett_lista))
             if st.button("🗑️ Kiválasztott helyettesítés törlése"):
-                hid = int(torol_h.split(" – ")[0].replace("#", ""))
+                hid = int(next(iter(torol_h.split(" – "))).replace("#", ""))
                 supabase.table("helyettesitesek").delete().eq("id", hid).execute()
                 st.success("✅ Helyettesítés törölve!")
                 st.rerun()
@@ -185,6 +184,62 @@ def mutat_torzsadatok():
             h_tol = hd1.date_input("Helyettesítés kezdete", value=date.today())
             h_ig = hd2.date_input("Helyettesítés vége", value=date.today())
             if st.form_submit_button("💾 Helyettesítés mentése", type="primary"):
+                if aktiv_user_opciok[kit] == aktiv_user_opciok[kivel]:
+                    st.error("A helyettesített és a helyettesítő személy nem lehet ugyanaz!")
+                elif h_tol > h_ig:
+                    st.error("A kezdeti dátum nem lehet későbbi, mint a záró dátum!")
+                else:
+                    supabase.table("helyettesitesek").insert({"helyettesitett_energetikus_id": aktiv_user_opciok[kit], "helyettesito_energetikus_id": aktiv_user_opciok[kivel], "felhasznalasi_hely_id": hely_valasztek[melyik_hely], "kezdet_datum": h_tol.isoformat(), "vege_datum": h_ig.isoformat(), "aktiv": True}).execute()
+                    st.success("✅ Helyettesítés sikeresen rögzítve!")
+                    st.rerun()
+
+    with t_hely:
+        st.subheader("Felhasználási helyek listája")
+        if osszes_hely:
+            fh_sorok = list({"ID": h["id"], "Megnevezés": h["megnevezes"], "POD / EIC": h["pod_eic_azonosito"], "Felelős energetikus": u_map.get(h.get("felelos_energetikus_id"), ""), "Állandó helyettes": u_map.get(h.get("allando_helyettes_id"), "Nincs"), "Aktív": h["aktiv"]} for h in osszes_hely)
+            st.dataframe(pd.DataFrame(fh_sorok), use_container_width=True, hide_index=True)
+
+        st.divider()
+        st.subheader("➕ Új felhasználási hely felvétele")
+        with st.form("uj_hely_form"):
+            fc1, fc2 = st.columns(2)
+            uj_h_nev = fc1.text_input("Telephely / Fogyasztási hely megnevezése (pl. Debrecen Iroda):")
+            uj_h_pod = fc2.text_input("POD / EIC mérési pont azonosító (pl. HU000130-...):")
+            felelos_opciok = {"Nincs kijelölve": None}
+            felelos_opciok.update(aktiv_user_opciok)
+            fc3, fc4 = st.columns(2)
+            uj_h_fel = fc3.selectbox("Felelős energetikus:", list(felelos_opciok.keys()))
+            uj_h_helyett = fc4.selectbox("Állandó helyettes (opcionális):", list(felelos_opciok.keys()))
+            if st.form_submit_button("💾 Felhasználási hely mentése", type="primary"):
+                if not uj_h_nev.strip() or not uj_h_pod.strip():
+                    st.error("Add meg a megnevezést és a POD azonosítót is!")
+                else:
+                    supabase.table("felhasznalasi_helyek").insert({"megnevezes": uj_h_nev.strip(), "pod_eic_azonosito": uj_h_pod.strip(), "felelos_energetikus_id": felelos_opciok[uj_h_fel], "allando_helyettes_id": felelos_opciok[uj_h_helyett], "aktiv": True}).execute()
+                    st.success("✅ Új felhasználási hely elmentve!")
+                    st.rerun()
+
+    with t_user:
+        st.subheader("Energetikusok listája")
+        if osszes_user:
+            u_sorok = list({"ID": u["id"], "Név": u["nev"], "Szerepkör": u["szerepkor"], "Aktív": u["aktiv"]} for u in osszes_user)
+            st.dataframe(pd.DataFrame(u_sorok), use_container_width=True, hide_index=True)
+
+        st.divider()
+        st.subheader("➕ Új energetikus felvétele")
+        with st.form("uj_user_form"):
+            uc1, uc2 = st.columns(2)
+            uj_u_nev = uc1.text_input("Energetikus teljes neve:")
+            uj_u_szerep = uc2.selectbox("Szerepkör:", list(("Energetikus", "Vezető energetikus", "Adminisztrátor")))
+            if st.form_submit_button("💾 Energetikus mentése", type="primary"):
+                if not uj_u_nev.strip():
+                    st.error("Add meg az energetikus nevét!")
+                else:
+                    uj_adat = {"nev": uj_u_nev.strip(), "szerepkor": uj_u_szerep, "aktiv": True}
+                    if osszes_user and "email" in next(iter(osszes_user)):
+                        uj_adat["email"] = f"{re.sub(r'[^a-z0-9]', '', uj_u_nev.lower())}@ceg.hu"
+                    supabase.table("energetikusok").insert(uj_adat).execute()
+                    st.success("✅ Új energetikus sikeresen felvéve!")
+                    st.rerun()
 st.sidebar.title("⚡ Energia Portál")
 users_data = supabase.table("energetikusok").select("id, nev, szerepkor").eq("aktiv", True).order("nev").execute().data or list()
 users_map = {u["nev"]: u for u in users_data}
@@ -269,17 +324,7 @@ if menu == "📊 Kimutatások és Riportok":
             t_sorok = list()
             for t in osszes_tetel:
                 sz = szamla_map.get(t["szamla_id"], {})
-                t_sorok.append({
-                    "Elszámolási hónap": tiszta_honap(sz.get("elszamolasi_honap")),
-                    "Felhasználási hely": h_map.get(sz.get("felhasznalasi_hely_id"), ""),
-                    "Számlaszám": sz.get("szamlaszam", ""),
-                    "Díjtétel": t["megnevezes_eredeti"],
-                    "Mennyiség": float(t["mennyiseg"]),
-                    "Mértékegység": t["mertekegyseg"],
-                    "Nettó egységár (Ft)": float(t["egysegar_netto"]),
-                    "Nettó összeg (Ft)": int(round(float(t["szamitott_netto"]))),
-                    "Bruttó összeg (Ft)": int(round(float(t["szamitott_brutto"])))
-                })
+                t_sorok.append({"Elszámolási hónap": tiszta_honap(sz.get("elszamolasi_honap")), "Felhasználási hely": h_map.get(sz.get("felhasznalasi_hely_id"), ""), "Számlaszám": sz.get("szamlaszam", ""), "Díjtétel": t["megnevezes_eredeti"], "Mennyiség": float(t["mennyiseg"]), "Mértékegység": t["mertekegyseg"], "Nettó egységár (Ft)": float(t["egysegar_netto"]), "Nettó összeg (Ft)": int(round(float(t["szamitott_netto"]))), "Bruttó összeg (Ft)": int(round(float(t["szamitott_brutto"])))})
             t_df = pd.DataFrame(t_sorok)
             tetel_nevek = sorted(list(t_df["Díjtétel"].unique()))
             val_tetel = st.selectbox("🔍 Díjtétel kiválasztása a havi mennyiség és egységár összehasonlításához:", tetel_nevek)
@@ -335,6 +380,7 @@ if menu == "📊 Kimutatások és Riportok":
         st.success(f"✅ A(z) {kiv['szamlaszam']} számú számla sikeresen törölve lett!")
         st.rerun()
     st.stop()
+
 fv = st.session_state["form_ver"]
 col_fej, col_gomb = st.columns((4, 1))
 col_fej.header("Energiaszámla ellenőrzése és rögzítése")
@@ -343,77 +389,3 @@ if col_gomb.button("🗑️ Új számla / Ürítés"):
     st.rerun()
 
 if "utolso_mentes" in st.session_state:
-    st.success(st.session_state.pop("utolso_mentes"))
-
-helyek = get_helyek(user_id)
-if not helyek:
-    st.warning("Nincs hozzád rendelt felhasználási hely a rendszerben.")
-    st.stop()
-
-fajl = st.file_uploader("1. Húzd ide a számlát (PDF vagy Excel/CSV) – opcionális", type=list(("pdf", "xlsx", "csv")), key=f"fajl_{fv}")
-f_id = f"{fv}_{fajl.name}" if fajl else f"{fv}_ures"
-pdf_adat = None
-if fajl and fajl.name.lower().endswith(".pdf"):
-    fajl.seek(0)
-    pdf_adat = feldolgoz_pdf(fajl)
-    if not pdf_adat["szoveg"]: st.warning("Szkennelt PDF: a tételeket lent kézzel írd be, a PDF fájlt ugyanúgy elmenti a rendszer.")
-    if pdf_adat["szamlaszam"]: st.success(f"PDF feldolgozva! Számlaszám: **{pdf_adat['szamlaszam']}**")
-
-hely_opciok = {f"{h['nev']} ({h['pod']}) [{h['jog']}]": int(h["id"]) for h in helyek}
-alap_idx = 0
-if pdf_adat and pdf_adat["pod"]:
-    alap_idx = next((i for i, lbl in enumerate(hely_opciok.keys()) if pdf_adat["pod"] in lbl), 0)
-
-st.subheader("2. Számla alapadatok")
-c1, c2, c3 = st.columns(3)
-v_hely = c1.selectbox("Felhasználási hely", list(hely_opciok.keys()), index=alap_idx, key=f"hely_{f_id}")
-hely_id = hely_opciok[v_hely]
-szamlaszam = c1.text_input("Számlaszám", value=pdf_adat["szamlaszam"] if pdf_adat else "", key=f"szsz_{f_id}")
-
-szolg_data = supabase.table("szolgaltatok").select("id, nev").order("nev").execute().data or list()
-szolg_opciok = {s["nev"]: int(s["id"]) for s in szolg_data}
-v_szolg = c2.selectbox("Szolgáltató", list(szolg_opciok.keys()), key=f"szolg_{f_id}")
-szolg_id = szolg_opciok[v_szolg]
-
-br_kulcs = f"br_{f_id}"
-alap_br_szoveg = f"{int(pdf_adat['brutto']):,}".replace(",", " ") if (pdf_adat and pdf_adat["brutto"] > 0) else ""
-szamlan_brutto_str = c2.text_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=alap_br_szoveg, placeholder="pl. 6 648", key=br_kulcs, on_change=formaz_ezres, args=(br_kulcs,))
-br_szamjegyek = re.sub(r"\D", "", szamlan_brutto_str)
-szamlan_brutto = int(br_szamjegyek) if br_szamjegyek else 0
-
-kelte = pdf_adat["kelte"] if pdf_adat else date.today()
-hatarido = pdf_adat["hatarido"] if pdf_adat else date.today()
-tol = c3.date_input("Elszámolási időszak kezdete", value=pdf_adat["tol"] if pdf_adat else date.today(), key=f"t_{f_id}")
-ig = c3.date_input("Elszámolási időszak vége", value=pdf_adat["ig"] if pdf_adat else date.today(), key=f"i_{f_id}")
-datum_rendben = tol <= ig
-if not datum_rendben:
-    c3.error("⚠️ Az időszak kezdete nem lehet későbbi, mint a vége!")
-elszamolasi_honap = szamol_elszamolasi_honap(ig)
-c3.info(f"📅 Elszámolási hónap: **{elszamolasi_honap}**")
-
-st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
-alap_df = pd.DataFrame(dict(Megnevezés=["Energiadíj", "Átviteli forgalmi díj", "Elosztói forgalmi díj", "Alapdíj"], Mennyiség=[0.0, 0.0, 0.0, 0.0], Mértékegység=["kWh", "kWh", "kWh", "hó"], Nettó_egységár=[0.0, 0.0, 0.0, 0.0], ÁFA=[27.0, 27.0, 27.0, 27.0]))
-alap_df.columns = list(("Megnevezés", "Mennyiség", "Mértékegység", "Nettó egységár", "ÁFA (%)"))
-if fajl and fajl.name.lower().endswith(".xlsx"): alap_df = pd.read_excel(fajl)
-if fajl and fajl.name.lower().endswith(".csv"): alap_df = pd.read_csv(fajl)
-
-szerk_df = st.data_editor(alap_df, num_rows="dynamic", use_container_width=True, key=f"ed_{f_id}")
-ossz_netto, ossz_brutto, tetelek = szamol_tetelek(szerk_df)
-
-brutto_dec = Decimal(szamlan_brutto)
-elteres = abs(brutto_dec - ossz_brutto)
-
-m1, m2, m3 = st.columns(3)
-m1.metric("Számított Nettó", ft_szoveg(ossz_netto))
-m2.metric("Számított Bruttó", ft_szoveg(ossz_brutto))
-m3.metric("Eltérés a számlától", ft_szoveg(elteres))
-
-egyezik = (elteres <= Decimal("2")) and (len(tetelek) > 0) and (szamlan_brutto > 0) and datum_rendben
-if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
-if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha az összegek egyeznek és a dátumok helyesek.")
-
-gomb = st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary", disabled=not egyezik)
-forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
-stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
-uj_szamla = {"szamlaszam": szamlaszam, "szolgaltato_id": szolg_id, "felhasznalasi_hely_id": hely_id, "forras_tipus": forras, "szamla_kelte": kelte.isoformat(), "fizetesi_hatarido": hatarido.isoformat(), "idoszak_tol": tol.isoformat(), "idoszak_ig": ig.isoformat(), "elszamolasi_honap": elszamolasi_honap, "szamlan_szereplo_brutto": float(brutto_dec), "szamitott_brutto": float(ossz_brutto), "elteres": float(elteres), "ellenorzes_statusz": stat, "jovahagyta_energetikus_id": user_id}
-if gomb and egyezik: mentes_adatbazisba(uj_szamla, tetelek, fajl)
