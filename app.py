@@ -91,6 +91,10 @@ def feldolgoz_pdf(fajl):
     if mp: adat["pod"] = mp.group(1).strip()
     return adat
 
+def _xml_tisztit(nev):
+    csere = str.maketrans("áéíóöőúüűÁÉÍÓÖŐÚÜŰ", "aeiooouuuAEIOOOUUU")
+    return re.sub(r"[^a-z0-9]", "", nev.translate(csere).lower())
+
 def _xml_datum(szoveg):
     if not szoveg:
         return None
@@ -110,38 +114,37 @@ def feldolgoz_xml(fajl):
         if "}" in elem.tag:
             elem.tag = elem.tag.split("}", 1)[-1]
 
-
     def elso_ertek(csomopont, tagek):
-        celok = set(t.lower() for t in tagek)
-        for t in tagek:
-            t_low = t.lower()
+        celok = list(_xml_tisztit(t) for t in tagek)
+        for cel in celok:
             for el in csomopont.iter():
-                if el.tag.lower() == t_low and el.text and el.text.strip():
+                if _xml_tisztit(el.tag) == cel and el.text and el.text.strip():
                     return el.text.strip()
+        cel_set = set(celok)
         for el in csomopont.iter():
             for k, v in el.attrib.items():
-                if k.lower() in celok and v and v.strip():
+                if _xml_tisztit(k) in cel_set and v and v.strip():
                     return v.strip()
         return ""
 
     adat = {"szoveg": szoveg, "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0, "pod": "", "tetelek_df": None}
-    adat["szamlaszam"] = elso_ertek(gyoker, ("invoicenumber", "szamlaszam", "bizonylatszam", "id"))
+    adat["szamlaszam"] = elso_ertek(gyoker, ("invoicenumber", "szamlaszam", "szamlasorszam", "bizonylatszam", "bizonylatsorszam", "sorszam", "documentnumber", "belnr"))
     if not adat["szamlaszam"]:
         alap_nev = next(iter(fajl.name.rsplit(".", 1)))
         if len(alap_nev) >= 4:
             adat["szamlaszam"] = alap_nev
 
-    k_str = elso_ertek(gyoker, ("invoiceissuedate", "issuedate", "szamlakelte", "kelte"))
+    k_str = elso_ertek(gyoker, ("invoiceissuedate", "issuedate", "szamlakelte", "bizonylatkelte", "kelte", "bldat"))
     if _xml_datum(k_str): adat["kelte"] = _xml_datum(k_str)
-    h_str = elso_ertek(gyoker, ("paymentdate", "duedate", "fizetesihatarido", "hatarido"))
+    h_str = elso_ertek(gyoker, ("paymentdate", "duedate", "fizetesihatarido", "esedekesseg", "hatarido"))
     if _xml_datum(h_str): adat["hatarido"] = _xml_datum(h_str)
 
-    tol_str = elso_ertek(gyoker, ("periodstartdate", "startdate", "linedeliverydate", "invoicedeliverydate", "idoszakkezdete", "tol"))
-    ig_str = elso_ertek(gyoker, ("periodenddate", "enddate", "invoicedeliverydate", "idoszakvege", "ig"))
+    tol_str = elso_ertek(gyoker, ("periodstartdate", "startdate", "linedeliverydate", "invoicedeliverydate", "idoszakkezdete", "idoszaktol", "teljesiteskezdete", "tol"))
+    ig_str = elso_ertek(gyoker, ("periodenddate", "enddate", "invoicedeliverydate", "idoszakvege", "idoszakig", "teljesitesvege", "ig"))
     if _xml_datum(tol_str): adat["tol"] = _xml_datum(tol_str)
     if _xml_datum(ig_str): adat["ig"] = _xml_datum(ig_str)
 
-    br_str = elso_ertek(gyoker, ("invoicegrossamount", "invoicegrossamounthuf", "grossamount", "payableamount", "bruttoosszeg", "fizetendoosszeg", "vegosszeg"))
+    br_str = elso_ertek(gyoker, ("invoicegrossamount", "invoicegrossamounthuf", "grossamount", "payableamount", "bruttoosszeg", "bruttovegosszeg", "fizetendoosszeg", "fizetendo", "vegosszeg", "brutto"))
     if br_str:
         try:
             adat["brutto"] = int(round(float(br_str.replace(" ", "").replace(",", "."))))
@@ -154,14 +157,14 @@ def feldolgoz_xml(fajl):
 
     me_map = {"KWH": "kWh", "MWH": "MWh", "CUBIC_METER": "m3", "MTQ": "m3", "M3": "m3", "MONTH": "hó", "MON": "hó", "HO": "hó", "PIECE": "db", "EA": "db", "C62": "db", "HOUR": "óra", "DAY": "nap", "MJ": "MJ", "GJ": "GJ"}
     sorok = list()
-    sor_tagek = ("line", "tetel", "invoiceline", "item", "row", "dijtetel")
-    elemek = list(el for el in gyoker.iter() if el.tag.lower() in sor_tagek)
+    sor_tagek = set(_xml_tisztit(x) for x in ("line", "tetel", "invoiceline", "item", "row", "dijtetel", "szamlatetel", "tetelsor"))
+    elemek = list(el for el in gyoker.iter() if _xml_tisztit(el.tag) in sor_tagek)
     for el in elemek:
-        megn = elso_ertek(el, ("linedescription", "description", "megnevezes", "tetelmegnevezes", "cikkmegnevezes", "szolgaltatasmegnevezes", "tetelnev", "nev", "name", "leiras", "text", "megjegyzes"))
-        q_str = elso_ertek(el, ("quantity", "invoicedquantity", "mennyiseg", "menny"))
-        p_str = elso_ertek(el, ("unitprice", "unitpricehuf", "priceamount", "egysegar", "nettoegysegar", "netto_egysegar", "ar"))
-        me_nyers = elso_ertek(el, ("unitofmeasureown", "unitofmeasure", "unitcode", "mertekegyseg", "me", "unit"))
-        afa_str = elso_ertek(el, ("vatpercentage", "percent", "afakulcs", "afa_kulcs", "afa"))
+        megn = elso_ertek(el, ("linedescription", "description", "megnevezes", "tetelmegnevezes", "dijtetelmegnevezes", "cikkmegnevezes", "szolgaltatasmegnevezes", "tetelnev", "dijnev", "cikknev", "nev", "name", "leiras", "szoveg", "text", "megjegyzes", "maktx", "arktx"))
+        q_str = elso_ertek(el, ("quantity", "invoicedquantity", "mennyiseg", "menny", "fkimg", "menge"))
+        p_str = elso_ertek(el, ("unitprice", "unitpricehuf", "priceamount", "egysegar", "nettoegysegar", "nettoar", "ar", "kbetr"))
+        me_nyers = elso_ertek(el, ("unitofmeasureown", "unitofmeasure", "unitcode", "mertekegyseg", "me", "unit", "vrkme", "meins"))
+        afa_str = elso_ertek(el, ("vatpercentage", "percent", "afakulcs", "afa", "taxrate"))
         if not megn and not q_str:
             continue
         try:
@@ -178,6 +181,7 @@ def feldolgoz_xml(fajl):
     if sorok:
         adat["tetelek_df"] = pd.DataFrame(sorok)
     return adat
+
 def get_helyek(uid):
     ma = date.today().isoformat()
     helyek = supabase.table("felhasznalasi_helyek").select("*").eq("aktiv", True).execute().data or list()
