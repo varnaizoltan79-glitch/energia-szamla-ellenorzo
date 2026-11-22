@@ -683,12 +683,20 @@ def mutat_torzsadatok():
                 fc4, fc5 = st.columns(2)
                 uj_h_fel = fc4.selectbox("Felelős energetikus:", list(fel_opc.keys()))
                 uj_h_helyett = fc5.selectbox("Állandó helyettes:", list(fel_opc.keys()))
-                if st.form_submit_button("💾 Új felhasználási hely mentése", type="primary") and uj_h_nev.strip() and uj_h_pod.strip():
-                    try:
-                        supabase.table("felhasznalasi_helyek").insert({"megnevezes": uj_h_nev.strip(), "energiatipus": uj_h_energia, "pod_eic_azonosito": uj_h_pod.strip(), "felelos_energetikus_id": fel_opc[uj_h_fel], "allando_helyettes_id": fel_opc[uj_h_helyett], "aktiv": True}).execute()
-                        st.rerun()
-                    except Exception as hiba:
-                        st.error(f"Adatbázis hiba: {hiba}")
+                    if st.form_submit_button("💾 Új felhasználási hely mentése", type="primary") and uj_h_nev.strip() and uj_h_pod.strip():
+                    tisztitott_pod = uj_h_pod.strip()
+                    letezo_h = next((h for h in osszes_hely if str(h.get("pod_eic_azonosito") or "").strip().lower() == tisztitott_pod.lower()), None)
+                    if letezo_h:
+                        st.warning(f"⚠️ Meglévő felhasználási hely: ezzel a POD / EIC azonosítóval (**{tisztitott_pod}**) már szerepel telephely (**{letezo_h['megnevezes']}**) a rendszerben!")
+                    else:
+                        try:
+                            supabase.table("felhasznalasi_helyek").insert({"megnevezes": uj_h_nev.strip(), "energiatipus": uj_h_energia, "pod_eic_azonosito": tisztitott_pod, "felelos_energetikus_id": fel_opc[uj_h_fel], "allando_helyettes_id": fel_opc[uj_h_helyett], "aktiv": True}).execute()
+                            st.rerun()
+                        except Exception as hiba:
+                            if "duplicate" in str(hiba).lower() or "23505" in str(hiba):
+                                st.warning("⚠️ Meglévő felhasználási hely: ezzel a POD / EIC azonosítóval már rögzítve van telephely a rendszerben!")
+                            else:
+                                st.error(f"Adatbázis hiba: {hiba}")
 
         if osszes_hely:
             st.divider()
