@@ -108,33 +108,39 @@ def feldolgoz_xml(fajl):
     gyoker = ET.fromstring(szoveg)
     for elem in gyoker.iter():
         if "}" in elem.tag:
-            elem.tag = elem.tag.split("}", 1)[1]
+            elem.tag = elem.tag.split("}", 1)
 
     def elso_ertek(csomopont, tagek):
+        celok = set(t.lower() for t in tagek)
         for t in tagek:
-            el = csomopont.find(f".//{t}")
-            if el is not None and el.text and el.text.strip():
-                return el.text.strip()
+            t_low = t.lower()
+            for el in csomopont.iter():
+                if el.tag.lower() == t_low and el.text and el.text.strip():
+                    return el.text.strip()
+        for el in csomopont.iter():
+            for k, v in el.attrib.items():
+                if k.lower() in celok and v and v.strip():
+                    return v.strip()
         return ""
 
     adat = {"szoveg": szoveg, "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0, "pod": "", "tetelek_df": None}
-    adat["szamlaszam"] = elso_ertek(gyoker, ("invoiceNumber", "InvoiceNumber", "szamlaszam", "Szamlaszam", "bizonylatszam"))
+    adat["szamlaszam"] = elso_ertek(gyoker, ("invoicenumber", "szamlaszam", "bizonylatszam", "id"))
     if not adat["szamlaszam"]:
         alap_nev = next(iter(fajl.name.rsplit(".", 1)))
         if len(alap_nev) >= 4:
             adat["szamlaszam"] = alap_nev
 
-    k_str = elso_ertek(gyoker, ("invoiceIssueDate", "IssueDate", "szamlakelte", "kelte"))
+    k_str = elso_ertek(gyoker, ("invoiceissuedate", "issuedate", "szamlakelte", "kelte"))
     if _xml_datum(k_str): adat["kelte"] = _xml_datum(k_str)
-    h_str = elso_ertek(gyoker, ("paymentDate", "DueDate", "fizetesiHatarido", "hatarido"))
+    h_str = elso_ertek(gyoker, ("paymentdate", "duedate", "fizetesihatarido", "hatarido"))
     if _xml_datum(h_str): adat["hatarido"] = _xml_datum(h_str)
 
-    tol_str = elso_ertek(gyoker, ("periodStartDate", "lineDeliveryDate", "invoiceDeliveryDate", "idoszakKezdete", "tol"))
-    ig_str = elso_ertek(gyoker, ("periodEndDate", "invoiceDeliveryDate", "idoszakVege", "ig"))
+    tol_str = elso_ertek(gyoker, ("periodstartdate", "startdate", "linedeliverydate", "invoicedeliverydate", "idoszakkezdete", "tol"))
+    ig_str = elso_ertek(gyoker, ("periodenddate", "enddate", "invoicedeliverydate", "idoszakvege", "ig"))
     if _xml_datum(tol_str): adat["tol"] = _xml_datum(tol_str)
     if _xml_datum(ig_str): adat["ig"] = _xml_datum(ig_str)
 
-    br_str = elso_ertek(gyoker, ("invoiceGrossAmount", "invoiceGrossAmountHUF", "GrossAmount", "bruttoOsszeg", "fizetendoOsszeg"))
+    br_str = elso_ertek(gyoker, ("invoicegrossamount", "invoicegrossamounthuf", "grossamount", "payableamount", "bruttoosszeg", "fizetendoosszeg", "vegosszeg"))
     if br_str:
         try:
             adat["brutto"] = int(round(float(br_str.replace(" ", "").replace(",", "."))))
@@ -145,36 +151,33 @@ def feldolgoz_xml(fajl):
     if mp:
         adat["pod"] = mp.group(1).strip()
 
-    me_map = {"KWH": "kWh", "MWH": "MWh", "CUBIC_METER": "m3", "M3": "m3", "MONTH": "hó", "PIECE": "db", "HOUR": "óra", "DAY": "nap", "MJ": "MJ", "GJ": "GJ"}
+    me_map = {"KWH": "kWh", "MWH": "MWh", "CUBIC_METER": "m3", "MTQ": "m3", "M3": "m3", "MONTH": "hó", "MON": "hó", "HO": "hó", "PIECE": "db", "EA": "db", "C62": "db", "HOUR": "óra", "DAY": "nap", "MJ": "MJ", "GJ": "GJ"}
     sorok = list()
-    for sor_tag in ("line", "Line", "tetel", "Tetel", "invoiceLine"):
-        elemek = gyoker.findall(f".//{sor_tag}")
-        if not elemek:
+    sor_tagek = ("line", "tetel", "invoiceline", "item", "row", "dijtetel")
+    elemek = list(el for el in gyoker.iter() if el.tag.lower() in sor_tagek)
+    for el in elemek:
+        megn = elso_ertek(el, ("linedescription", "description", "megnevezes", "tetelmegnevezes", "cikkmegnevezes", "szolgaltatasmegnevezes", "tetelnev", "nev", "name", "leiras", "text", "megjegyzes"))
+        q_str = elso_ertek(el, ("quantity", "invoicedquantity", "mennyiseg", "menny"))
+        p_str = elso_ertek(el, ("unitprice", "unitpricehuf", "priceamount", "egysegar", "nettoegysegar", "netto_egysegar", "ar"))
+        me_nyers = elso_ertek(el, ("unitofmeasureown", "unitofmeasure", "unitcode", "mertekegyseg", "me", "unit"))
+        afa_str = elso_ertek(el, ("vatpercentage", "percent", "afakulcs", "afa_kulcs", "afa"))
+        if not megn and not q_str:
             continue
-        for el in elemek:
-            megn = elso_ertek(el, ("lineDescription", "Description", "megnevezes", "tetelNev"))
-            q_str = elso_ertek(el, ("quantity", "Quantity", "mennyiseg"))
-            p_str = elso_ertek(el, ("unitPrice", "unitPriceHUF", "UnitPrice", "egysegar", "nettoEgysegar"))
-            me_nyers = elso_ertek(el, ("unitOfMeasureOwn", "unitOfMeasure", "UnitOfMeasure", "mertekegyseg"))
-            afa_str = elso_ertek(el, ("vatPercentage", "VatPercentage", "afaKulcs", "afa"))
-            if not megn and not q_str:
-                continue
-            try:
-                menny = float(q_str.replace(" ", "").replace(",", ".")) if q_str else 1.0
-                ar = float(p_str.replace(" ", "").replace(",", ".")) if p_str else 0.0
-                afa_szam = float(afa_str.replace("%", "").replace(",", ".")) if afa_str else 0.27
-                if afa_szam <= 1.0 and afa_szam > 0:
-                    afa_szam = round(afa_szam * 100, 2)
-                me = me_map.get(me_nyers.upper(), me_nyers) if me_nyers else "kWh"
-                sorok.append({"Megnevezés": megn or "Díjtétel", "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa_szam})
-            except ValueError:
-                continue
-        if sorok:
-            break
+        try:
+            menny = float(q_str.replace(" ", "").replace(",", ".")) if q_str else 1.0
+            ar = float(p_str.replace(" ", "").replace(",", ".")) if p_str else 0.0
+            afa_szam = float(afa_str.replace("%", "").replace(",", ".")) if afa_str else 27.0
+            if 0 < afa_szam <= 1.0:
+                afa_szam = round(afa_szam * 100, 2)
+            me = me_map.get(me_nyers.upper(), me_nyers) if me_nyers else "kWh"
+            sorok.append({"Megnevezés": megn or "Díjtétel", "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa_szam})
+        except ValueError:
+            continue
 
     if sorok:
         adat["tetelek_df"] = pd.DataFrame(sorok)
     return adat
+
 
 def get_helyek(uid):
     ma = date.today().isoformat()
