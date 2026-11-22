@@ -532,11 +532,10 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
                 adat["brutto"] = int(round(br_val))
                 break
 
-    egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?"
+        egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?"
     me_minta = r"(kW|MW|GJ|db|lm3|m3|m³|kWh|MWh|hó)"
     ido_oszlop_minta = r"(?:\d{4}\.\d{2}\.\d{2}\s*[-–]?\s*\d{4}\.\d{2}\.\d{2}|\d{4}\.\d{2}\s*hó|\d{4}\.\d{2})"
-    tetel_minta = re.compile(rf"^(.+?)\s+{ido_oszlop_minta}\s+({egyes_szam})\s+({egyes_szam})\s*{me_minta}\s*({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?(?:\s+({egyes_szam}))?(?:\s+(27|5|18|0|AHK)\b)?")
-
+    tetel_minta = re.compile(rf"(?:^(.+?)\s+)?{ido_oszlop_minta}\s+({egyes_szam})\s+({egyes_szam})\s*{me_minta}\s*({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?(?:\s+({egyes_szam}))?(?:\s+(27|5|18|0|AHK)\b)?")
 
     talalatok = list()
     for oldal in dok:
@@ -567,28 +566,37 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
             tablazat_sorok.append(" ".join(ss for _, ss in akt_szavak))
 
         kategoria = ""
+        elozo_nev = ""
         for s in tablazat_sorok:
             s_low = s.lower()
             if "fűtési célú költségek" in s_low:
                 kategoria = "Fűtési célú - "
+                elozo_nev = ""
                 continue
             elif "vízfelmelegítési célú költségek" in s_low:
                 kategoria = "Vízfelmelegítési - "
+                elozo_nev = ""
                 continue
             elif "viziközmű-szolgáltatási díjak" in s_low or "víziközmű-szolgáltatási díjak" in s_low:
                 kategoria = "Víziközmű - "
+                elozo_nev = ""
                 continue
             elif "bruttó számlaérték" in s_low or "számla áfa összesítője" in s_low or "hőközponti és épület" in s_low:
                 break
 
-            if s_low.startswith("fizetendő ") or "összesen" in s_low:
+            if s_low.startswith("fizetendő ") or "összesen" in s_low or "tétel megnevezése" in s_low:
                 continue
 
             m = tetel_minta.search(s)
             if not m:
+                tiszta_sor = re.sub(r"\d{4}\.\d{2}\.\d{2}\s*[-–]?\s*\d{4}\.\d{2}\.\d{2}", "", s).strip(" -–:|")
+                if tiszta_sor and not re.search(r"\d", tiszta_sor) and len(tiszta_sor) >= 4:
+                    elozo_nev = tiszta_sor
                 continue
 
-            nev = f"{kategoria}{m.group(1).strip()}".strip()
+            nyers_nev = (m.group(1) or elozo_nev or "Távhő díjtétel").strip()
+            elozo_nev = ""
+            nev = f"{kategoria}{nyers_nev}".strip()
             szorzo = _hu_szam(m.group(2)) or 1.0
             menny = (_hu_szam(m.group(3)) or 0.0) * szorzo
             me = m.group(4).replace("m³", "m3")
