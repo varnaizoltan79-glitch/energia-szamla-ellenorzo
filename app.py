@@ -932,7 +932,7 @@ def mutat_szamla_rogzites(user_id):
     kiv_pod = pdf_adat["pod"] if pdf_adat else ""
     kiv_pod_info = None
 
-        if pod_adatok:
+    if pod_adatok:
         foszamla_br = pdf_adat.get("foszamla_brutto", 0) if pdf_adat else 0
         podok_osszesen = sum(p["brutto"] for p in pod_adatok.values())
         if len(pod_adatok) > 1 and foszamla_br > 0:
@@ -959,7 +959,6 @@ def mutat_szamla_rogzites(user_id):
         val_pod_cimke = st.selectbox("📍 Mérési pont (POD) kiválasztása a számlából:", list(pod_cimkek.keys()), key=f"pod_sel_{f_id}")
         kiv_pod = pod_cimkek[val_pod_cimke]
         kiv_pod_info = pod_adatok[kiv_pod]
-
 
     form_kulcs = f"{f_id}_{kiv_pod}" if kiv_pod else f_id
 
