@@ -1273,9 +1273,6 @@ def mutat_kimutatasok():
                 st.altair_chart(alt.Chart(szurt_t_df).mark_line(point=True).encode(x=alt.X("Elszámolási hónap:N", sort=ho_sorrend_t, axis=alt.Axis(labelAngle=0)), y=alt.Y("mean(Nettó egységár (Ft)):Q", axis=alt.Axis(title="Nettó egységár (Ft)")), color="Felhasználási hely:N").properties(height=280), use_container_width=True)
             st.dataframe(t_df, use_container_width=True, hide_index=True)
 
-
-
-
 def mutat_szamla_rogzites(user_id):
     fv = st.session_state["form_ver"]
     col_fej, col_gomb = st.columns((4, 1))
@@ -1335,7 +1332,7 @@ def mutat_szamla_rogzites(user_id):
         foszamla_br = pdf_adat.get("foszamla_brutto", 0) if pdf_adat else 0
         podok_osszesen = sum(p["brutto"] for p in pod_adatok.values())
         if len(pod_adatok) > 1 and foszamla_br > 0:
-            gy_elteres = abs(foszamla_br - podok_osszesen)
+            gy_elteres = foszamla_br - podok_osszesen
             g1, g2, g3 = st.columns(3)
             g1.metric("Gyűjtőszámla főösszege", ft_szoveg(foszamla_br))
             g2.metric("POD-ok összesített bruttója", ft_szoveg(podok_osszesen))
@@ -1399,7 +1396,6 @@ def mutat_szamla_rogzites(user_id):
         c3.error("⚠️ Az időszak kezdete nem lehet későbbi, mint a vége!")
     elszamolasi_honap = szamol_elszamolasi_honap(ig)
     c3.info(f"📅 Elszámolási hónap: **{elszamolasi_honap}**")
-
     st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
     alap_df = pd.DataFrame(dict(Megnevezés=["Energiadíj", "Átviteli forgalmi díj", "Elosztói forgalmi díj", "Alapdíj"], Mennyiség=[0.0, 0.0, 0.0, 0.0], Mértékegység=["kWh", "kWh", "kWh", "hó"], Nettó_egységár=[0.0, 0.0, 0.0, 0.0], ÁFA=[27.0, 27.0, 27.0, 27.0]))
     alap_df.columns = list(("Megnevezés", "Mennyiség", "Mértékegység", "Nettó egységár", "ÁFA (%)"))
@@ -1411,6 +1407,7 @@ def mutat_szamla_rogzites(user_id):
         alap_df = pd.read_excel(fajl)
     elif fajl and fajl.name.lower().endswith(".csv"):
         alap_df = pd.read_csv(fajl)
+
     komp_sor = pd.DataFrame([{"Megnevezés": "Bruttó díj kompenzáció", "Mennyiség": 1.0, "Mértékegység": "Ft", "Nettó egységár": 0.0, "ÁFA (%)": 0.0}])
     alap_df = pd.concat([alap_df, komp_sor], ignore_index=True)
 
@@ -1458,16 +1455,15 @@ def mutat_szamla_rogzites(user_id):
 
     ossz_netto, ossz_brutto, tetelek = szamol_tetelek(ujraszamolt_df)
 
-    ossz_netto, ossz_brutto, tetelek = szamol_tetelek(ujraszamolt_df)
     brutto_dec = Decimal(szamlan_brutto)
-    elteres = abs(brutto_dec - ossz_brutto)
+    elteres = brutto_dec - ossz_brutto
 
     m1, m2, m3 = st.columns(3)
     m1.metric("Számított Nettó", ft_szoveg(ossz_netto))
     m2.metric("Számított Bruttó", ft_szoveg(ossz_brutto))
     m3.metric("Eltérés a számlától", ft_szoveg(elteres))
 
-    egyezik = (elteres <= Decimal("2")) and (len(tetelek) > 0) and (szamlan_brutto > 0) and datum_rendben
+    egyezik = (abs(elteres) <= Decimal("2")) and (len(tetelek) > 0) and (szamlan_brutto > 0) and datum_rendben
     if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
     if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha az összegek egyeznek és a dátumok helyesek.")
 
@@ -1498,4 +1494,3 @@ elif menu == "🔄 Helyettesítések":
     mutat_helyettesitesek()
 else:
     mutat_torzsadatok()
-
