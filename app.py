@@ -6,6 +6,7 @@ import altair as alt
 import fitz
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from supabase import create_client
 
 st.set_page_config(page_title="Energiaszámla Ellenőrző", page_icon="⚡", layout="wide")
@@ -993,8 +994,26 @@ def mutat_szamla_rogzites(user_id):
         urit_urlap()
         st.rerun()
 
-    if "utolso_mentes" in st.session_state:
+        if "utolso_mentes" in st.session_state:
         st.success(st.session_state.pop("utolso_mentes"))
+        components.html(
+            """
+            <script>
+                const doc = window.parent.document;
+                const targets = [
+                    doc.querySelector('[data-testid="stMain"]'),
+                    doc.querySelector('[data-testid="stAppViewContainer"]'),
+                    doc.querySelector('section.main'),
+                    doc.documentElement,
+                    doc.body
+                ];
+                targets.forEach(el => { if (el) el.scrollTop = 0; });
+                window.parent.scrollTo(0, 0);
+            </script>
+            """,
+            height=0
+        )
+
 
     helyek = get_helyek(user_id)
     if not helyek:
