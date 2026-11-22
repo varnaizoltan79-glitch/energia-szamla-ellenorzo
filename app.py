@@ -76,12 +76,13 @@ def _hu_szam(szoveg):
         tiszta = tiszta.replace(".", "").replace(",", ".")
     elif "," in tiszta:
         tiszta = tiszta.replace(",", ".")
-    elif tiszta.count(".") > 1:
-        tiszta = tiszta.replace(".", "")
+    elif re.search(r"(?<=\d)\.(?=\d{3}(?!\d))", tiszta):
+        tiszta = re.sub(r"(?<=\d)\.(?=\d{3}(?!\d))", "", tiszta)
     try:
         return float(tiszta)
     except ValueError:
         return None
+
 
 SZOLGALTATO_SABLONOK = {
     "ALTEO": {
