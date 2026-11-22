@@ -102,26 +102,45 @@ SZOLGALTATO_SABLONOK = {
     }
 }
 
+def _vizszintes_sorok(oldal):
+    szavak = oldal.get_text("words")
+    if not szavak:
+        return list()
+    szavak.sort(key=lambda w: (round(w[1] / 3.0), w[0]))
+    sorok = list()
+    akt_y = szavak[0][1]
+    akt_szavak = list()
+    for w in szavak:
+        if abs(w[1] - akt_y) <= 3.5:
+            akt_szavak.append(w)
+        else:
+            akt_szavak.sort(key=lambda x: x[0])
+            sorok.append(" ".join(x[4] for x in akt_szavak))
+            akt_y = w[1]
+            akt_szavak = [w]
+    if akt_szavak:
+        akt_szavak.sort(key=lambda x: x[0])
+        sorok.append(" ".join(x[4] for x in akt_szavak))
+    return sorok
+
 def _feldolgoz_alteo_pdf(dok, szoveg, adat):
     adat["szolgaltato_kulcs"] = "ALTEO"
-    sorok = list(s.strip() for s in szoveg.splitlines() if s.strip())
+    oldal1_sorok = _vizszintes_sorok(dok[0])
 
-    for i, s in enumerate(sorok):
+    for s in oldal1_sorok:
         m_sz = re.search(r"Számlaszám[:\s]+(\d{6,})", s)
         if m_sz:
             adat["szamlaszam"] = m_sz.group(1)
-        elif s.rstrip(":") == "Számlaszám" and i + 1 < len(sorok) and re.fullmatch(r"\d{6,}", sorok[i + 1]):
-            adat["szamlaszam"] = sorok[i + 1]
-
-        m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", s)
+        m_ido = re.search(r"Időszak[:\s]+(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", s)
         if m_ido:
             adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
             adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
-
-        if s.rstrip(":") == "Számla kelte" and i + 1 < len(sorok) and re.fullmatch(r"\d{4}\.\d{2}\.\d{2}", sorok[i + 1]):
-            adat["kelte"] = datetime.strptime(sorok[i + 1], "%Y.%m.%d").date()
-        if s.rstrip(":") == "Fizetési határidő" and i + 1 < len(sorok) and re.fullmatch(r"\d{4}\.\d{2}\.\d{2}", sorok[i + 1]):
-            adat["hatarido"] = datetime.strptime(sorok[i + 1], "%Y.%m.%d").date()
+        m_k = re.search(r"Számla\s*kelte[:\s]+(\d{4}\.\d{2}\.\d{2})", s)
+        if m_k:
+            adat["kelte"] = datetime.strptime(m_k.group(1), "%Y.%m.%d").date()
+        m_h = re.search(r"Fizetési\s*határidő[:\s]+(\d{4}\.\d{2}\.\d{2})", s)
+        if m_h:
+            adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
 
     m_br = re.search(r"Fizetendő\s*összesen[:\s]+([\d\.\s\xa0]+,\d{2})\s*Ft", szoveg)
     if m_br:
@@ -129,49 +148,35 @@ def _feldolgoz_alteo_pdf(dok, szoveg, adat):
         if br_val:
             adat["brutto"] = int(round(br_val))
 
-    me_halmaz = {"kWh", "MWh", "csp", "kW", "kVAhr", "db", "hó", "m3", "MJ", "GJ"}
-    kizaro = ("összesen", "Tétel megnevezés", "Mennyiség", "M.e.", "Egységár", "Nettó", "ÁFA", "Bruttó", "Pénzeszközök", "Energia-jövedéki", "Rendszerhasználati", "Közbeszerzési díjak", "EKR díj", "Számlaszám", "Oldal:", "Forgalmi tételek")
+    szam_minta = r"-?\d[\d\.]*,\d+"
+    me_minta = r"(kWh|MWh|csp|kW|kVAhr|db|hó|m3|MJ|GJ)"
+    tetel_minta = re.compile(rf"^(.+?)\s+({szam_minta})\s+{me_minta}\s+({szam_minta})\s*Ft\s+({szam_minta}|-?\d[\d\.]*)\s+(27|5|18|0|AHK)\b")
+    kizaro = ("összesen", "Tétel megnevezés", "Pénzeszközök", "Energia-jövedéki", "Rendszerhasználati", "Közbeszerzési díjak", "EKR díj", "Számlaszám", "Oldal:", "Forgalmi tételek")
+
     talalatok = list()
-
-    for i, s in enumerate(sorok):
-        if s not in me_halmaz or i == 0 or i + 3 >= len(sorok):
+    for idx, s in enumerate(oldal1_sorok):
+        m = tetel_minta.match(s)
+        if not m:
             continue
-        menny = _hu_szam(sorok[i - 1])
-        ar_sor = sorok[i + 1]
-        if menny is None or "Ft" not in ar_sor:
-            continue
-        ar = _hu_szam(ar_sor.replace("Ft", ""))
-        if ar is None:
-            continue
+        nev = m.group(1).strip()
+        menny = _hu_szam(m.group(2))
+        me = m.group(3)
+        ar = _hu_szam(m.group(4))
+        afa_nyers = m.group(6)
+        afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
 
-        afa = 27.0
-        for k in range(i + 2, min(i + 5, len(sorok))):
-            if sorok[k] == "AHK":
-                afa = 0.0
-                break
-            if sorok[k] in ("27", "5", "18", "0"):
-                afa = float(sorok[k])
-                break
+        if idx + 1 < len(oldal1_sorok):
+            kov = oldal1_sorok[idx + 1].strip()
+            if not tetel_minta.match(kov) and not any(kz.lower() in kov.lower() for kz in kizaro) and not re.search(r"szolgáltatást tartalmaz", kov, re.I):
+                nev = f"{nev} {kov}".strip()
 
-        nev_reszek = list()
-        if i >= 2:
-            elozo = sorok[i - 2]
-            if not any(kz.lower() in elozo.lower() for kz in kizaro) and not re.match(r"^-?\d[\d\.]*,\d+", elozo):
-                nev_reszek.append(elozo)
-        for k in range(i + 4, min(i + 7, len(sorok))):
-            kov = sorok[k]
-            if any(kz.lower() in kov.lower() for kz in kizaro) or re.match(r"^-?\d[\d\.]*,\d+", kov) or kov in me_halmaz:
-                break
-            if not re.search(r"szolgáltatást tartalmaz", kov, re.I):
-                nev_reszek.append(kov)
-                break
-
-        nev = " ".join(nev_reszek).strip() or "Díjtétel"
-        talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": s, "Nettó egységár": ar, "ÁFA (%)": afa})
+        if menny is not None and ar is not None:
+            talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
+
 
 
 def feldolgoz_pdf(fajl):
