@@ -25,39 +25,18 @@ if "form_ver" not in st.session_state:
 def urit_urlap():
     st.session_state["form_ver"] += 1
 
+import fitz
+
 @st.dialog("📄 Számla PDF előnézet", width="large")
 def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
     st.subheader(f"Számlaszám: {szamlaszam} ({pdf_utvonal})")
     pdf_bytes = supabase.storage.from_("szamlak-pdf").download(pdf_utvonal)
-    b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-    html_kod = f"""
-    <div id="pdf-doboz" style="text-align:center; background:#f0f2f6; padding:10px; max-height:620px; overflow-y:auto;"></div>
-    <script src="https://cloudflare.com"></script>
-    <script>
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cloudflare.com';
-      const raw = atob("{b64}");
-      const uint8 = new Uint8Array(raw.length);
-      for (let i = 0; i < raw.length; i++) uint8[i] = raw.charCodeAt(i);
-      pdfjsLib.getDocument({{data: uint8}}).promise.then(pdf => {{
-        const doboz = document.getElementById('pdf-doboz');
-        for (let p = 1; p <= pdf.numPages; p++) {{
-          pdf.getPage(p).then(page => {{
-            const vp = page.getViewport({{scale: 1.35}});
-            const canvas = document.createElement('canvas');
-            canvas.style.marginBottom = '12px';
-            canvas.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
-            canvas.style.maxWidth = '100%';
-            canvas.height = vp.height;
-            canvas.width = vp.width;
-            doboz.appendChild(canvas);
-            page.render({{canvasContext: canvas.getContext('2d'), viewport: vp}});
-          }});
-        }}
-      }});
-    </script>
-    """
-    components.html(html_kod, height=640)
+    dok = fitz.open(stream=pdf_bytes, filetype="pdf")
+    for idx, oldal in enumerate(dok):
+        kep = oldal.get_pixmap(dpi=150)
+        st.image(kep.tobytes("png"), caption=f"{idx + 1}. oldal", use_container_width=True)
     st.download_button("📥 PDF letöltése a gépre", data=pdf_bytes, file_name=pdf_utvonal, mime="application/pdf")
+
 
 def feldolgoz_pdf(fajl):
     reader = PdfReader(fajl)
