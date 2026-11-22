@@ -118,7 +118,7 @@ def _feldolgoz_alteo_pdf(dok, szoveg, adat):
         if br_val:
             adat["brutto"] = int(round(br_val))
 
-    oldal1_sorok = list(s.strip() for s in (dok.get_text("text") or "").splitlines() if s.strip())
+    oldal1_sorok = list(s.strip() for s in (dok[0].get_text("text") or "").splitlines() if s.strip())
     szam_minta = r"-?\d[\d\.]*,\d+"
     me_minta = r"(kWh|MWh|csp|kW|kVAhr|db|hó|m3|MJ|GJ)"
     sor_minta = re.compile(rf"^({szam_minta})\s+{me_minta}\s+({szam_minta})\s*Ft\s+({szam_minta}|-?\d[\d\.]*)\s+(27|5|18|0|AHK)\b")
