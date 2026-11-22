@@ -532,10 +532,9 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
                 adat["brutto"] = int(round(br_val))
                 break
 
-        egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?"
+    egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?"
     me_minta = r"(kW|MW|GJ|db|lm3|m3|m³|kWh|MWh|hó)"
-    ido_oszlop_minta = r"(?:\d{4}\.\d{2}\.\d{2}\s*[-–]?\s*\d{4}\.\d{2}\.\d{2}|\d{4}\.\d{2}\s*hó|\d{4}\.\d{2})"
-    tetel_minta = re.compile(rf"(?:^(.+?)\s+)?{ido_oszlop_minta}\s+({egyes_szam})\s+({egyes_szam})\s*{me_minta}\s*({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?(?:\s+({egyes_szam}))?(?:\s+(27|5|18|0|AHK)\b)?")
+    tetel_minta = re.compile(rf"(?:({egyes_szam})\s+)?({egyes_szam})\s*{me_minta}\s*({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?(?:\s+({egyes_szam}))?(?:\s+(27|5|18|0|AHK)\b)?")
 
     talalatok = list()
     for oldal in dok:
@@ -554,7 +553,7 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
         for x0, y0, _, _, szo, *_ in rendezett:
             if x0 > 555.0:
                 continue
-            if abs(y0 - akt_y) <= 6.5:
+            if abs(y0 - akt_y) <= 8.0:
                 akt_szavak.append((x0, szo))
             else:
                 akt_szavak.sort(key=_rendez_x_szo)
@@ -589,27 +588,31 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
 
             m = tetel_minta.search(s)
             if not m:
-                tiszta_sor = re.sub(r"\d{4}\.\d{2}\.\d{2}\s*[-–]?\s*\d{4}\.\d{2}\.\d{2}", "", s).strip(" -–:|")
+                tiszta_sor = re.sub(r"\d{4}\.\d{2}(?:\.\d{2})?(?:\s*[-–]?\s*\d{4}\.\d{2}\.\d{2}|\s*hó)?", "", s).strip(" -–:|")
                 if tiszta_sor and not re.search(r"\d", tiszta_sor) and len(tiszta_sor) >= 4:
                     elozo_nev = tiszta_sor
                 continue
 
-            nyers_nev = (m.group(1) or elozo_nev or "Távhő díjtétel").strip()
+            bal_resz = s[:m.start()].strip()
+            bal_resz = re.sub(r"\d{4}\.\d{2}(?:\.\d{2})?(?:\s*[-–]?\s*\d{4}\.\d{2}\.\d{2}|\s*hó)?", "", bal_resz).strip(" -–:|")
+            me = m.group(3).replace("m³", "m3")
+            alap_nev_tipus = "Alapdíj" if me in ("MW", "kW", "hó") else ("Hődíj" if me in ("GJ", "MWh", "kWh") else "Távhő díjtétel")
+            nyers_nev = bal_resz or elozo_nev or alap_nev_tipus
             elozo_nev = ""
             nev = f"{kategoria}{nyers_nev}".strip()
-            szorzo = _hu_szam(m.group(2)) or 1.0
-            menny = (_hu_szam(m.group(3)) or 0.0) * szorzo
-            me = m.group(4).replace("m³", "m3")
-            ar = _hu_szam(m.group(5))
-            netto_oszlop = _hu_szam(m.group(6))
-            afa_nyers = m.group(7)
+
+            szorzo = _hu_szam(m.group(1)) or 1.0
+            menny = (_hu_szam(m.group(2)) or 0.0) * szorzo
+            ar = _hu_szam(m.group(4))
+            netto_oszlop = _hu_szam(m.group(5))
+            afa_nyers = m.group(6)
             afa = 5.0 if not afa_nyers else (0.0 if afa_nyers == "AHK" else float(afa_nyers))
 
             if ar is not None and netto_oszlop is not None and menny > 0:
                 if abs((menny * ar) - netto_oszlop) > 5.0:
                     ar = round(netto_oszlop / menny, 4)
 
-            if ar is not None:
+            if ar is not None and menny > 0:
                 talalatok.append({"Megnevezés": nev, "Mennyiség": round(menny, 4), "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
     if talalatok:
