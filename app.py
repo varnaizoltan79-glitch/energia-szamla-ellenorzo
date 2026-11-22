@@ -520,7 +520,7 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
 
     kategoria = ""
     egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?"
-    me_minta = r"(kW|GJ|db|m3|m³|kWh|MWh|hó)"
+    me_minta = r"(kW|GJ|db|lm3|m3|m³|kWh|MWh|hó)"
     tetel_minta = re.compile(rf"^(.+?)\s+\d{{4}}\.\d{{2}}\.\d{{2}}\s+\d{{4}}\.\d{{2}}\.\d{{2}}\s+({egyes_szam})\s+({egyes_szam})\s*{me_minta}\s+({egyes_szam})\s*Ft\s+({egyes_szam})\s+(27|5|18|0|AHK)\b")
     talalatok = list()
 
