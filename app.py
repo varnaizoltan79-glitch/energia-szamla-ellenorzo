@@ -907,28 +907,49 @@ def mutat_torzsadatok():
                         st.session_state["szolg_torles_ver"] = sz_ver + 1
                         st.rerun()
 
-def _betolt_szurt_szamlak(kulcs_prefix):
+def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
     lista = supabase.table("szamlak").select("*").order("id", desc=True).execute().data or list()
     if not lista:
         st.info("Még nincs mentett számla.")
         return None, None, None, None, None, None, None
 
     legutobbi_id = max(int(s["id"]) for s in lista)
-    h_map = {h["id"]: h["megnevezes"] for h in (supabase.table("felhasznalasi_helyek").select("id, megnevezes").execute().data or list())}
-    sz_map = {s["id"]: s["nev"] for s in (supabase.table("szolgaltatok").select("id, nev").execute().data or list())}
+    hely_adatok = supabase.table("felhasznalasi_helyek").select("id, megnevezes, energiatipus").execute().data or list()
+    szolg_adatok = supabase.table("szolgaltatok").select("id, nev, energiatipus").execute().data or list()
+    h_map = {h["id"]: h["megnevezes"] for h in hely_adatok}
+    h_et_map = {h["id"]: (h.get("energiatipus") or "") for h in hely_adatok}
+    sz_map = {s["id"]: s["nev"] for s in szolg_adatok}
+    sz_et_map = {s["id"]: (s.get("energiatipus") or "") for s in szolg_adatok}
+
+    et_per_szamla = dict()
+    for s in lista:
+        et_val = h_et_map.get(s["felhasznalasi_hely_id"]) or sz_et_map.get(s["szolgaltato_id"]) or "Nincs megadva"
+        et_per_szamla[s["id"]] = et_val
 
     osszes_honap = sorted(list({tiszta_honap(s.get("elszamolasi_honap")) for s in lista}), key=honap_kulcs, reverse=True)
-    osszes_hely = sorted(list({h_map.get(s["felhasznalasi_hely_id"], "Ismeretlen") for s in lista}))
+    osszes_et = sorted(list(set(et_per_szamla.values())))
 
-    fs1, fs2 = st.columns(2)
-    val_honapok = fs1.multiselect("📅 Szűrés elszámolási hónapra (üresen = összes):", osszes_honap, key=f"{kulcs_prefix}_ho")
-    val_helyek = fs2.multiselect("🏭 Szűrés felhasználási helyre (üresen = összes):", osszes_hely, key=f"{kulcs_prefix}_hely")
+    if mutass_energiatipus:
+        fs1, fs2, fs3 = st.columns(3)
+        val_honapok = fs1.multiselect("📅 Elszámolási hónap (üresen = összes):", osszes_honap, key=f"{kulcs_prefix}_ho")
+        val_et = fs2.multiselect("⚡ Energiatípus (üresen = összes):", osszes_et, key=f"{kulcs_prefix}_et")
+        szurt_hely_nevek = sorted(list({h_map.get(s["felhasznalasi_hely_id"], "Ismeretlen") for s in lista if not val_et or et_per_szamla[s["id"]] in val_et}))
+        val_helyek = fs3.multiselect("🏭 Felhasználási hely (üresen = összes):", szurt_hely_nevek, key=f"{kulcs_prefix}_hely")
+    else:
+        fs1, fs2 = st.columns(2)
+        val_honapok = fs1.multiselect("📅 Szűrés elszámolási hónapra (üresen = összes):", osszes_honap, key=f"{kulcs_prefix}_ho")
+        val_et = list()
+        osszes_hely = sorted(list({h_map.get(s["felhasznalasi_hely_id"], "Ismeretlen") for s in lista}))
+        val_helyek = fs2.multiselect("🏭 Szűrés felhasználási helyre (üresen = összes):", osszes_hely, key=f"{kulcs_prefix}_hely")
 
     szurt_lista = list()
     for s in lista:
         ho_cimke = tiszta_honap(s.get("elszamolasi_honap"))
         hely_cimke = h_map.get(s["felhasznalasi_hely_id"], "Ismeretlen")
+        et_cimke = et_per_szamla[s["id"]]
         if val_honapok and ho_cimke not in val_honapok:
+            continue
+        if val_et and et_cimke not in val_et:
             continue
         if val_helyek and hely_cimke not in val_helyek:
             continue
@@ -978,6 +999,7 @@ def _betolt_szurt_szamlak(kulcs_prefix):
         sorok.append({
             "Számlaszám": s["szamlaszam"],
             "Elszámolási hónap": tiszta_honap(s.get("elszamolasi_honap")),
+            "Energiatípus": et_per_szamla[sid],
             "Felhasználási hely": h_map.get(s["felhasznalasi_hely_id"], ""),
             "Szolgáltató": sz_map.get(s["szolgaltato_id"], ""),
             "Időszak kezdete": s["idoszak_tol"],
@@ -988,6 +1010,7 @@ def _betolt_szurt_szamlak(kulcs_prefix):
             "PDF fájl": s["pdf_utvonal"]
         })
     return szurt_lista, pd.DataFrame(sorok), osszes_tetel, netto_per_szamla, fogyasztas_per_szamla, h_map, legutobbi_id
+
 
 
 def mutat_rogzitett_szamlak():
@@ -1072,7 +1095,8 @@ def mutat_rogzitett_szamlak():
 
 def mutat_kimutatasok():
     st.header("📊 Kimutatások és Riportok")
-    szurt_lista, df, osszes_tetel, netto_per_szamla, energia_kwh_per_szamla, h_map, _ = _betolt_szurt_szamlak("kim")
+    szurt_lista, df, osszes_tetel, netto_per_szamla, energia_kwh_per_szamla, h_map, _ = _betolt_szurt_szamlak("kim", mutass_energiatipus=True)
+
     if szurt_lista is None:
         return
 
