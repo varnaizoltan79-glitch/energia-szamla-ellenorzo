@@ -96,10 +96,11 @@ SZOLGALTATO_SABLONOK = {
         "azonositok": ("debreceni vízmű", "23458208", "tiszamenti regionális vízművek", "11265832", "trvzrt.hu", "érv. zrt", "érv zrt", "11069186", "ervzrt.hu", "nyírségvíz", "11492809", "nyirsegviz.hu", "drv zrt", "dunántúli regionális vízmű", "11226002", "drv.hu"),
         "szolgaltato_nev_kulcs": "vízmű",
     },
-        "TAVHO": {
+    "TAVHO": {
         "azonositok": ("debreceni hőszolgáltató", "23506088", "dhrt.hu", "távhőszolgáltatási számla", "nyírtávhő", "nyíregyházi távhőszolgáltató", "11241256", "nyirtavho.hu", "távhőszolgáltatási részszámla"),
         "szolgaltato_nev_kulcs": "távhő",
     }
+}
 
 
 def _vizszintes_sorok(oldal):
