@@ -157,7 +157,8 @@ def _kinyer_pdf_tetelek(szoveg):
 
         talalatok.append({"Megnevezés": eleje, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
-    return pd.DataFrame(talalatok) if talalatok else Nonedef feldolgoz_pdf(fajl):
+    return pd.DataFrame(talalatok) if talalatok else None
+    def feldolgoz_pdf(fajl):
     pdf_bytes = fajl.read()
     dok = fitz.open(stream=pdf_bytes, filetype="pdf")
     szoveg = "\n".join(list(oldal.get_text("text") or "" for oldal in dok))
