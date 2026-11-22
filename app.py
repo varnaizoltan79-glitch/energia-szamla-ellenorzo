@@ -378,10 +378,11 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         m_ido = re.search(r"(?:Elszámolási|Elszámolt)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–.]+\s*(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
     if not m_ido:
         m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", szoveg)
-
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
+
+
 
     m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", szoveg, re.I)
     if m_k:
