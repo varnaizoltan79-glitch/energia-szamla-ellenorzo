@@ -1109,7 +1109,7 @@ def mutat_szamla_rogzites(user_id):
     elszamolasi_honap = szamol_elszamolasi_honap(ig)
     c3.info(f"📅 Elszámolási hónap: **{elszamolasi_honap}**")
 
-    st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
+        st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
     alap_df = pd.DataFrame(dict(Megnevezés=["Energiadíj", "Átviteli forgalmi díj", "Elosztói forgalmi díj", "Alapdíj"], Mennyiség=[0.0, 0.0, 0.0, 0.0], Mértékegység=["kWh", "kWh", "kWh", "hó"], Nettó_egységár=[0.0, 0.0, 0.0, 0.0], ÁFA=[27.0, 27.0, 27.0, 27.0]))
     alap_df.columns = list(("Megnevezés", "Mennyiség", "Mértékegység", "Nettó egységár", "ÁFA (%)"))
     if kiv_pod_info and kiv_pod_info.get("tetelek_df") is not None:
@@ -1164,7 +1164,6 @@ def mutat_szamla_rogzites(user_id):
         st.rerun()
 
     ossz_netto, ossz_brutto, tetelek = szamol_tetelek(ujraszamolt_df)
-
     brutto_dec = Decimal(szamlan_brutto)
     elteres = abs(brutto_dec - ossz_brutto)
 
@@ -1177,4 +1176,31 @@ def mutat_szamla_rogzites(user_id):
     if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
     if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha az összegek egyeznek és a dátumok helyesek.")
 
+    mentes_fajl = fajl if (fajl and fajl.name.lower().endswith(".pdf")) else None
+    gomb = st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary", disabled=not egyezik)
+    forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
+    stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
+    uj_szamla = {"szamlaszam": szamlaszam, "szolgaltato_id": szolg_id, "felhasznalasi_hely_id": hely_id, "forras_tipus": forras, "szamla_kelte": kelte.isoformat(), "fizetesi_hatarido": hatarido.isoformat(), "idoszak_tol": tol.isoformat(), "idoszak_ig": ig.isoformat(), "elszamolasi_honap": elszamolasi_honap, "szamlan_szereplo_brutto": float(brutto_dec), "szamitott_brutto": float(ossz_brutto), "elteres": float(elteres), "ellenorzes_statusz": stat, "jovahagyta_energetikus_id": user_id}
+    minden_pod_kesz = (not gyujto_mod) or (len(meglevo_hely_idk | {hely_id}) >= len(pod_adatok))
+    if gomb and egyezik:
+        mentes_adatbazisba(uj_szamla, tetelek, mentes_fajl, gyujto_marad=not minden_pod_kesz)
+
+st.sidebar.title("⚡ Energia Portál")
+users_data = supabase.table("energetikusok").select("id, nev, szerepkor").eq("aktiv", True).order("nev").execute().data or list()
+users_map = {u["nev"]: u for u in users_data}
+valasztott_nev = st.sidebar.selectbox("Belépett energetikus:", list(users_map.keys()))
+user_sor = users_map[valasztott_nev]
+st.sidebar.info(f"Szerepkör: **{user_sor['szerepkor']}**")
+
+menu = st.sidebar.radio("Menü", list(("🧾 Számla ellenőrzés és feltöltés", "📑 Rögzített számlák", "📊 Kimutatások és Riportok", "🔄 Helyettesítések", "⚙️ Törzsadatok")), on_change=urit_urlap)
+if menu == "🧾 Számla ellenőrzés és feltöltés":
+    mutat_szamla_rogzites(int(user_sor["id"]))
+elif menu == "📑 Rögzített számlák":
+    mutat_rogzitett_szamlak()
+elif menu == "📊 Kimutatások és Riportok":
+    mutat_kimutatasok()
+elif menu == "🔄 Helyettesítések":
+    mutat_helyettesitesek()
+else:
+    mutat_torzsadatok()
 
