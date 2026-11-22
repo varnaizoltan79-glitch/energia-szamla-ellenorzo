@@ -2,6 +2,7 @@ import base64
 import re
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
+import altair as alt
 import fitz
 import pandas as pd
 import streamlit as st
@@ -28,6 +29,9 @@ def urit_urlap():
 def formaz_ezres(kulcs):
     nyers = re.sub(r"\D", "", st.session_state.get(kulcs, ""))
     st.session_state[kulcs] = f"{int(nyers):,}".replace(",", " ") if nyers else ""
+
+def ft_szoveg(ertek):
+    return f"{int(round(float(ertek))):,} Ft".replace(",", " ")
 
 HONAPOK_HU = ("", "január", "február", "március", "április", "május", "június", "július", "augusztus", "szeptember", "október", "november", "december")
 
@@ -181,21 +185,37 @@ if menu == "📊 Kimutatások és Riportok":
         st.warning("A megadott szűrőkkel nincs találat.")
         st.stop()
 
-    sorok = list({"Számlaszám": s["szamlaszam"], "Elszámolási hónap": tiszta_honap(s.get("elszamolasi_honap")), "Felhasználási hely": h_map.get(s["felhasznalasi_hely_id"], ""), "Szolgáltató": sz_map.get(s["szolgaltato_id"], ""), "Időszak kezdete": s["idoszak_tol"], "Időszak vége": s["idoszak_ig"], "Bruttó összeg (Ft)": float(s["szamlan_szereplo_brutto"]), "Státusz": s["ellenorzes_statusz"], "PDF fájl": s["pdf_utvonal"]} for s in szurt_lista)
+    sorok = list({"Számlaszám": s["szamlaszam"], "Elszámolási hónap": tiszta_honap(s.get("elszamolasi_honap")), "Felhasználási hely": h_map.get(s["felhasznalasi_hely_id"], ""), "Szolgáltató": sz_map.get(s["szolgaltato_id"], ""), "Időszak kezdete": s["idoszak_tol"], "Időszak vége": s["idoszak_ig"], "Bruttó összeg (Ft)": int(round(float(s["szamlan_szereplo_brutto"]))), "Státusz": s["ellenorzes_statusz"], "PDF fájl": s["pdf_utvonal"]} for s in szurt_lista)
     df = pd.DataFrame(sorok)
 
     k1, k2, k3 = st.columns(3)
     k1.metric("Számlák száma", f"{len(df)} db")
-    k2.metric("Összesített bruttó költség", f"{df['Bruttó összeg (Ft)'].sum():,.0f} Ft".replace(",", " "))
+    k2.metric("Összesített bruttó költség", ft_szoveg(df["Bruttó összeg (Ft)"].sum()))
     k3.metric("Érintett hónapok", f"{df['Elszámolási hónap'].nunique()} hónap")
 
+    y_tengely = alt.Axis(format=",.0f", labelExpr="replace(datum.label, /,/g, ' ') + ' Ft'", title="Bruttó összeg (Ft)")
     tab_ho, tab_hely = st.tabs(list(("📅 Havi bontású költségek", "🏭 Telephelyek szerinti összesítés")))
     with tab_ho:
-        havi_pivot = df.pivot_table(index="Elszámolási hónap", columns="Felhasználási hely", values="Bruttó összeg (Ft)", aggfunc="sum", fill_value=0.0)
-        havi_pivot = havi_pivot.reindex(sorted(havi_pivot.index, key=honap_kulcs))
-        st.bar_chart(havi_pivot)
+        ho_df = df.groupby(["Elszámolási hónap", "Felhasználási hely"], as_index=False)["Bruttó összeg (Ft)"].sum()
+        ho_df["Összeg"] = ho_df["Bruttó összeg (Ft)"].apply(ft_szoveg)
+        ho_sorrend = sorted(list(ho_df["Elszámolási hónap"].unique()), key=honap_kulcs)
+        graf_ho = alt.Chart(ho_df).mark_bar().encode(
+            x=alt.X("Elszámolási hónap:N", sort=ho_sorrend, axis=alt.Axis(labelAngle=0, title="Elszámolási hónap")),
+            y=alt.Y("Bruttó összeg (Ft):Q", axis=y_tengely),
+            color=alt.Color("Felhasználási hely:N", title="Felhasználási hely"),
+            xOffset="Felhasználási hely:N",
+            tooltip=[alt.Tooltip("Elszámolási hónap:N", title="Elszámolási hónap"), alt.Tooltip("Felhasználási hely:N", title="Felhasználási hely"), alt.Tooltip("Összeg:N", title="Bruttó összeg")]
+        ).properties(height=360)
+        st.altair_chart(graf_ho, use_container_width=True)
     with tab_hely:
-        st.bar_chart(df.groupby("Felhasználási hely")["Bruttó összeg (Ft)"].sum())
+        hely_df = df.groupby("Felhasználási hely", as_index=False)["Bruttó összeg (Ft)"].sum()
+        hely_df["Összeg"] = hely_df["Bruttó összeg (Ft)"].apply(ft_szoveg)
+        graf_hely = alt.Chart(hely_df).mark_bar(color="#0068c9").encode(
+            x=alt.X("Felhasználási hely:N", axis=alt.Axis(labelAngle=0, title="Felhasználási hely")),
+            y=alt.Y("Bruttó összeg (Ft):Q", axis=y_tengely),
+            tooltip=[alt.Tooltip("Felhasználási hely:N", title="Felhasználási hely"), alt.Tooltip("Összeg:N", title="Bruttó összeg")]
+        ).properties(height=360)
+        st.altair_chart(graf_hely, use_container_width=True)
 
     st.caption("💡 Kattints egy sor elejére a táblázatban a csatolt PDF számla megnyitásához!")
     esemeny = st.dataframe(df, use_container_width=True, on_select="rerun", selection_mode="single-row")
@@ -212,7 +232,7 @@ if menu == "📊 Kimutatások és Riportok":
 
     st.divider()
     st.subheader("🗑️ Számla törlése")
-    torles_opciok = {f"#{s['id']} – {s['szamlaszam']} ({tiszta_honap(s.get('elszamolasi_honap'))}, {h_map.get(s['felhasznalasi_hely_id'], '')}, {float(s['szamlan_szereplo_brutto']):,.0f} Ft)": s for s in szurt_lista}
+    torles_opciok = {f"#{s['id']} – {s['szamlaszam']} ({tiszta_honap(s.get('elszamolasi_honap'))}, {h_map.get(s['felhasznalasi_hely_id'], '')}, {ft_szoveg(s['szamlan_szereplo_brutto'])})": s for s in szurt_lista}
     valasztott_torles = st.selectbox("Válaszd ki a törlendő számlát:", list(torles_opciok.keys()))
     if st.button("🗑️ Kiválasztott számla végleges törlése"):
         kiv = torles_opciok[valasztott_torles]
@@ -293,16 +313,5 @@ brutto_dec = Decimal(szamlan_brutto)
 elteres = abs(brutto_dec - ossz_brutto)
 
 m1, m2, m3 = st.columns(3)
-m1.metric("Számított Nettó", f"{ossz_netto:,.0f} Ft".replace(",", " "))
-m2.metric("Számított Bruttó", f"{ossz_brutto:,.0f} Ft".replace(",", " "))
-m3.metric("Eltérés a számlától", f"{elteres:,.0f} Ft".replace(",", " "))
-
-egyezik = (elteres <= Decimal("2")) and (len(tetelek) > 0) and (szamlan_brutto > 0) and datum_rendben
-if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
-if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha az összegek egyeznek és a dátumok helyesek.")
-
-gomb = st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary", disabled=not egyezik)
-forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
-stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
-uj_szamla = {"szamlaszam": szamlaszam, "szolgaltato_id": szolg_id, "felhasznalasi_hely_id": hely_id, "forras_tipus": forras, "szamla_kelte": kelte.isoformat(), "fizetesi_hatarido": hatarido.isoformat(), "idoszak_tol": tol.isoformat(), "idoszak_ig": ig.isoformat(), "elszamolasi_honap": elszamolasi_honap, "szamlan_szereplo_brutto": float(brutto_dec), "szamitott_brutto": float(ossz_brutto), "elteres": float(elteres), "ellenorzes_statusz": stat, "jovahagyta_energetikus_id": user_id}
-if gomb and egyezik: mentes_adatbazisba(uj_szamla, tetelek, fajl)
+m1.metric("Számított Nettó", ft_szoveg(ossz_netto))
+m2.metric("Számított Bruttó", ft_szoveg(ossz_brutto))
