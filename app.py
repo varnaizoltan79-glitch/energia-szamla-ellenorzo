@@ -412,7 +412,11 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl, gyujto_marad=False):
         except Exception as ins_hiba:
             if "duplicate" in str(ins_hiba).lower() or "23505" in str(ins_hiba):
                 uj_szamla["szamlaszam"] = f"{alap_szamlaszam} (Hely #{uj_szamla['felhasznalasi_hely_id']})"
-                res = supabase.table("szamlak").insert(uj_szamla).execute()
+                try:
+                    res = supabase.table("szamlak").insert(uj_szamla).execute()
+                except Exception:
+                    st.warning("⚠️ Ez a mérési pont (POD) már rögzítve van ehhez a számlaszámhoz! Válaszd a következő POD-ot a legördülő listából, vagy töröld a korábbit a Kimutatások menüben.")
+                    return
             else:
                 raise ins_hiba
 
@@ -432,6 +436,7 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl, gyujto_marad=False):
         st.rerun()
     except Exception as hiba:
         st.error(f"Pontos hiba oka: {hiba}")
+
 
 def mutat_helyettesitesek():
     st.header("🔄 Helyettesítések kezelése")
