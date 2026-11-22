@@ -1108,20 +1108,62 @@ def mutat_szamla_rogzites(user_id):
     elszamolasi_honap = szamol_elszamolasi_honap(ig)
     c3.info(f"📅 Elszámolási hónap: **{elszamolasi_honap}**")
 
-    st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
+        st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
     alap_df = pd.DataFrame(dict(Megnevezés=["Energiadíj", "Átviteli forgalmi díj", "Elosztói forgalmi díj", "Alapdíj"], Mennyiség=[0.0, 0.0, 0.0, 0.0], Mértékegység=["kWh", "kWh", "kWh", "hó"], Nettó_egységár=[0.0, 0.0, 0.0, 0.0], ÁFA=[27.0, 27.0, 27.0, 27.0]))
     alap_df.columns = list(("Megnevezés", "Mennyiség", "Mértékegység", "Nettó egységár", "ÁFA (%)"))
     if kiv_pod_info and kiv_pod_info.get("tetelek_df") is not None:
-        alap_df = kiv_pod_info["tetelek_df"]
+        alap_df = kiv_pod_info["tetelek_df"].copy()
     elif pdf_adat and pdf_adat.get("tetelek_df") is not None:
-        alap_df = pdf_adat["tetelek_df"]
+        alap_df = pdf_adat["tetelek_df"].copy()
     elif fajl and fajl.name.lower().endswith(".xlsx"):
         alap_df = pd.read_excel(fajl)
     elif fajl and fajl.name.lower().endswith(".csv"):
         alap_df = pd.read_csv(fajl)
 
-    szerk_df = st.data_editor(alap_df, num_rows="dynamic", use_container_width=True, key=f"ed_{form_kulcs}")
-    ossz_netto, ossz_brutto, tetelek = szamol_tetelek(szerk_df)
+    def _frissit_tetel_osszegek(df_be):
+        df_ki = df_be.copy()
+        nettos = list()
+        bruttos = list()
+        for _, sor in df_ki.iterrows():
+            m_v = sor.get("Mennyiség")
+            a_v = sor.get("Nettó egységár")
+            if m_v is None or a_v is None or pd.isna(m_v) or pd.isna(a_v):
+                nettos.append(0)
+                bruttos.append(0)
+                continue
+            menny_d = Decimal(str(m_v))
+            ar_d = Decimal(str(a_v))
+            afa_v = sor.get("ÁFA (%)")
+            afa_d = Decimal(str(afa_v)) if (afa_v is not None and not pd.isna(afa_v)) else Decimal("27.0")
+            n_val = (menny_d * ar_d).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            b_val = (n_val * (Decimal("1") + afa_d / Decimal("100"))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            nettos.append(int(n_val))
+            bruttos.append(int(b_val))
+        df_ki["Nettó összeg (Ft)"] = nettos
+        df_ki["Bruttó összeg (Ft)"] = bruttos
+        return df_ki
+
+    df_state_kulcs = f"tetel_tabla_{form_kulcs}"
+    if df_state_kulcs not in st.session_state:
+        st.session_state[df_state_kulcs] = _frissit_tetel_osszegek(alap_df)
+
+    szerk_df = st.data_editor(
+        st.session_state[df_state_kulcs],
+        num_rows="dynamic",
+        use_container_width=True,
+        disabled=list(("Nettó összeg (Ft)", "Bruttó összeg (Ft)")),
+        key=f"ed_{form_kulcs}"
+    )
+
+    ujraszamolt_df = _frissit_tetel_osszegek(szerk_df)
+    regi_parok = list(zip(st.session_state[df_state_kulcs]["Nettó összeg (Ft)"], st.session_state[df_state_kulcs]["Bruttó összeg (Ft)"]))
+    uj_parok = list(zip(ujraszamolt_df["Nettó összeg (Ft)"], ujraszamolt_df["Bruttó összeg (Ft)"]))
+    if regi_parok != uj_parok:
+        st.session_state[df_state_kulcs] = ujraszamolt_df
+        st.rerun()
+
+    ossz_netto, ossz_brutto, tetelek = szamol_tetelek(ujraszamolt_df)
+
 
     brutto_dec = Decimal(szamlan_brutto)
     elteres = abs(brutto_dec - ossz_brutto)
