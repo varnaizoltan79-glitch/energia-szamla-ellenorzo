@@ -1102,7 +1102,7 @@ def mutat_kimutatasok():
     mertekegysegek = set()
     for val in df["Szumma nettó egységár"].dropna():
         if "/" in str(val):
-            mertekegysegek.add(str(val).split("/", 1).strip())
+                        mertekegysegek.add(str(val).split("/", 1)[-1].strip())
     egyseg_cimke = next(iter(mertekegysegek)) if len(mertekegysegek) == 1 else "egység"
 
     ossz_netto_mind = sum(netto_per_szamla.values())
