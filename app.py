@@ -932,21 +932,38 @@ def _betolt_szurt_szamlak(kulcs_prefix):
     szamla_idk = list(s["id"] for s in szurt_lista)
     osszes_tetel = supabase.table("szamla_tetelek").select("*").in_("szamla_id", szamla_idk).execute().data or list()
     netto_per_szamla = dict()
-    energia_kwh_per_szamla = dict()
+    fogyasztas_per_szamla = dict()
+    fogyasztas_me_per_szamla = dict()
+    szennyviz_m3_per_szamla = dict()
+
     for t in osszes_tetel:
         sid = t["szamla_id"]
         netto_per_szamla[sid] = netto_per_szamla.get(sid, 0.0) + float(t.get("szamitott_netto") or 0.0)
         megn = str(t.get("megnevezes_eredeti") or "").strip().lower()
         me = str(t.get("mertekegyseg") or "").strip().lower()
-        if ("energiadíj" in megn or "energia díj" in megn or "áramdíj" in megn) and me == "kwh":
-            energia_kwh_per_szamla[sid] = energia_kwh_per_szamla.get(sid, 0.0) + float(t.get("mennyiseg") or 0.0)
+        menny = float(t.get("mennyiseg") or 0.0)
+
+        if ("energiadíj" in megn or "energia díj" in megn or "áramdíj" in megn or "földgáz" in megn or "gázdíj" in megn) and me in ("kwh", "m3", "m³", "mj", "gj"):
+            fogyasztas_per_szamla[sid] = fogyasztas_per_szamla.get(sid, 0.0) + menny
+            fogyasztas_me_per_szamla[sid] = "m³" if me in ("m3", "m³") else t.get("mertekegyseg", "kWh")
+        elif "ivóvíz" in megn and me in ("m3", "m³"):
+            fogyasztas_per_szamla[sid] = fogyasztas_per_szamla.get(sid, 0.0) + menny
+            fogyasztas_me_per_szamla[sid] = "m³"
+        elif "szennyvíz" in megn and me in ("m3", "m³"):
+            szennyviz_m3_per_szamla[sid] = szennyviz_m3_per_szamla.get(sid, 0.0) + menny
+
+    for sid, szv_menny in szennyviz_m3_per_szamla.items():
+        if fogyasztas_per_szamla.get(sid, 0.0) == 0.0 and szv_menny > 0:
+            fogyasztas_per_szamla[sid] = szv_menny
+            fogyasztas_me_per_szamla[sid] = "m³"
 
     sorok = list()
     for s in szurt_lista:
         sid = s["id"]
         s_netto = netto_per_szamla.get(sid, 0.0)
-        s_kwh = energia_kwh_per_szamla.get(sid, 0.0)
-        szumma_egysegar = round(s_netto / s_kwh, 2) if s_kwh > 0 else None
+        s_fogy = fogyasztas_per_szamla.get(sid, 0.0)
+        s_me = fogyasztas_me_per_szamla.get(sid, "kWh")
+        szumma_egysegar = f"{round(s_netto / s_fogy, 2):,.2f} Ft/{s_me}".replace(",", " ").replace(".", ",") if s_fogy > 0 else None
         sorok.append({
             "Számlaszám": s["szamlaszam"],
             "Elszámolási hónap": tiszta_honap(s.get("elszamolasi_honap")),
@@ -955,11 +972,12 @@ def _betolt_szurt_szamlak(kulcs_prefix):
             "Időszak kezdete": s["idoszak_tol"],
             "Időszak vége": s["idoszak_ig"],
             "Bruttó összeg (Ft)": int(round(float(s["szamlan_szereplo_brutto"]))),
-            "Szumma nettó egységár (Ft/kWh)": szumma_egysegar,
+            "Szumma nettó egységár": szumma_egysegar,
             "Státusz": s["ellenorzes_statusz"],
             "PDF fájl": s["pdf_utvonal"]
         })
-    return szurt_lista, pd.DataFrame(sorok), osszes_tetel, netto_per_szamla, energia_kwh_per_szamla, h_map, legutobbi_id
+    return szurt_lista, pd.DataFrame(sorok), osszes_tetel, netto_per_szamla, fogyasztas_per_szamla, h_map, legutobbi_id
+
 
 def mutat_rogzitett_szamlak():
     st.header("📑 Rögzített számlák")
@@ -1072,7 +1090,13 @@ def mutat_kimutatasok():
         ea_df = pd.DataFrame(ea_sorok).groupby(["Elszámolási hónap", "Felhasználási hely"], as_index=False)[["Nettó", "kWh"]].sum()
         ea_df = ea_df[ea_df["kWh"] > 0].copy()
         if ea_df.empty:
-            st.info("Nincs kWh alapú Energiadíj tétel a kiválasztott számlákban.")
+                    if ea_df.empty:
+            st.info("Nincs fogyasztás alapú (kWh vagy m³) díjtétel a kiválasztott számlákban.")
+        else:
+            ea_df["Szumma nettó egységár (Ft/egység)"] = (ea_df["Nettó"] / ea_df["kWh"]).round(2)
+            ea_sorrend = sorted(list(ea_df["Elszámolási hónap"].unique()), key=honap_kulcs)
+            st.altair_chart(alt.Chart(ea_df).mark_bar().encode(x=alt.X("Elszámolási hónap:N", sort=ea_sorrend, axis=alt.Axis(labelAngle=0, title="Elszámolási hónap")), y=alt.Y("Szumma nettó egységár (Ft/egység):Q", axis=alt.Axis(title="Szumma nettó egységár (Ft/kWh vagy Ft/m³)")), color=alt.Color("Felhasználási hely:N", title="Felhasználási hely"), xOffset="Felhasználási hely:N", tooltip=[alt.Tooltip("Elszámolási hónap:N"), alt.Tooltip("Felhasználási hely:N"), alt.Tooltip("Szumma nettó egységár (Ft/egység):Q", format=",.2f")]).properties(height=360), use_container_width=True)
+
         else:
             ea_df["Szumma nettó egységár (Ft/kWh)"] = (ea_df["Nettó"] / ea_df["kWh"]).round(2)
             ea_sorrend = sorted(list(ea_df["Elszámolási hónap"].unique()), key=honap_kulcs)
