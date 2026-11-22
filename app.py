@@ -327,7 +327,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
         adat["pod_adatok"] = pod_adatok
         elso_pod = next(iter(pod_adatok.keys()))
         adat["pod"] = elso_pod
-       def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
+def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
     adat["szolgaltato_kulcs"] = "vízmű"
     m_sz = re.search(r"Számla\s*sorszáma\s*:?\s*([A-Z0-9/-]{6,})", szoveg, re.I)
     if m_sz:
