@@ -791,8 +791,9 @@ def _betolt_szurt_szamlak(kulcs_prefix):
     lista = supabase.table("szamlak").select("*").order("jovahagyas_ideje", desc=True).execute().data or list()
     if not lista:
         st.info("Még nincs mentett számla.")
-        return None, None, None, None, None, None
+        return None, None, None, None, None, None, None
 
+    legutobbi_id = max(int(s["id"]) for s in lista)
     h_map = {h["id"]: h["megnevezes"] for h in (supabase.table("felhasznalasi_helyek").select("id, megnevezes").execute().data or list())}
     sz_map = {s["id"]: s["nev"] for s in (supabase.table("szolgaltatok").select("id, nev").execute().data or list())}
 
@@ -815,7 +816,7 @@ def _betolt_szurt_szamlak(kulcs_prefix):
 
     if not szurt_lista:
         st.warning("A megadott szűrőkkel nincs találat.")
-        return None, None, None, None, None, None
+        return None, None, None, None, None, None, None
 
     szamla_idk = list(s["id"] for s in szurt_lista)
     osszes_tetel = supabase.table("szamla_tetelek").select("*").in_("szamla_id", szamla_idk).execute().data or list()
@@ -847,17 +848,24 @@ def _betolt_szurt_szamlak(kulcs_prefix):
             "Státusz": s["ellenorzes_statusz"],
             "PDF fájl": s["pdf_utvonal"]
         })
-    return szurt_lista, pd.DataFrame(sorok), osszes_tetel, netto_per_szamla, energia_kwh_per_szamla, h_map
+    return szurt_lista, pd.DataFrame(sorok), osszes_tetel, netto_per_szamla, energia_kwh_per_szamla, h_map, legutobbi_id
 
 def mutat_rogzitett_szamlak():
     st.header("📑 Rögzített számlák")
-    szurt_lista, df, _, _, _, h_map = _betolt_szurt_szamlak("rogz")
+    szurt_lista, df, _, _, _, h_map, legutobbi_id = _betolt_szurt_szamlak("rogz")
     if szurt_lista is None:
         return
 
+    def _szinez_utolso(sor):
+        if int(szurt_lista[sor.name]["id"]) == legutobbi_id:
+            return ["background-color: #d4edda; color: #155724; font-weight: bold"] * len(sor)
+        return [""] * len(sor)
+
+    st.yl_df = df.style.apply(_szinez_utolso, axis=1)
+
     rogz_ver = st.session_state.get("rogzitett_ver", 0)
-    st.caption("💡 Kattints egy sor elejére a táblázatban a csatolt PDF számla megnyitásához!")
-    esemeny = st.dataframe(df, use_container_width=True, on_select="rerun", selection_mode="single-row", key=f"rogz_df_{rogz_ver}")
+    st.caption("💡 Az utoljára rögzített számla sora zölddel van kiemelve. Kattints egy sor elejére a csatolt PDF megnyitásához!")
+    esemeny = st.dataframe(st.yl_df, use_container_width=True, on_select="rerun", selection_mode="single-row", key=f"rogz_df_{rogz_ver}")
     if esemeny.selection.rows:
         kiv_idx = next(iter(esemeny.selection.rows))
         kiv_szamla = szurt_lista[kiv_idx]
@@ -896,9 +904,10 @@ def mutat_rogzitett_szamlak():
                 st.session_state["rogzitett_ver"] = rogz_ver + 1
                 st.rerun()
 
+
 def mutat_kimutatasok():
     st.header("📊 Kimutatások és Riportok")
-    szurt_lista, df, osszes_tetel, netto_per_szamla, energia_kwh_per_szamla, h_map = _betolt_szurt_szamlak("kim")
+    szurt_lista, df, osszes_tetel, netto_per_szamla, energia_kwh_per_szamla, h_map, _ = _betolt_szurt_szamlak("kim")
     if szurt_lista is None:
         return
 
