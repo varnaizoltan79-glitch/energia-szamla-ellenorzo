@@ -672,7 +672,7 @@ def mutat_torzsadatok():
                 else:
                     st.info("Nem történt változás a táblázatban.")
 
-                with st.expander("➕ Új felhasználási hely hozzáadása"):
+                        with st.expander("➕ Új felhasználási hely hozzáadása"):
             with st.form("uj_hely_form"):
                 fc1, fc2, fc3 = st.columns(3)
                 uj_h_nev = fc1.text_input("Megnevezés:")
