@@ -204,10 +204,11 @@ v_szolg = c2.selectbox("Szolgáltató", list(szolg_opciok.keys()), key=f"szolg_{
 szolg_id = szolg_opciok[v_szolg]
 szamlan_brutto = c2.number_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=pdf_adat["brutto"] if pdf_adat else 0.0, step=1.0, format="%.2f", key=f"br_{f_id}")
 
-kelte = c3.date_input("Számla kelte", value=pdf_adat["kelte"] if pdf_adat else date.today(), key=f"k_{f_id}")
-hatarido = c3.date_input("Fizetési határidő", value=pdf_adat["hatarido"] if pdf_adat else date.today(), key=f"h_{f_id}")
-tol = c3.date_input("Időszak kezdete", value=pdf_adat["tol"] if pdf_adat else date.today(), key=f"t_{f_id}")
-ig = c3.date_input("Időszak vége", value=pdf_adat["ig"] if pdf_adat else date.today(), key=f"i_{f_id}")
+kelte = pdf_adat["kelte"] if pdf_adat else date.today()
+hatarido = pdf_adat["hatarido"] if pdf_adat else date.today()
+tol = c3.date_input("Elszámolási időszak kezdete", value=pdf_adat["tol"] if pdf_adat else date.today(), key=f"t_{f_id}")
+ig = c3.date_input("Elszámolási időszak vége", value=pdf_adat["ig"] if pdf_adat else date.today(), key=f"i_{f_id}")
+
 
 st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
 alap_df = pd.DataFrame(dict(Megnevezés=["Energiadíj", "Átviteli forgalmi díj", "Elosztói forgalmi díj", "Alapdíj"], Mennyiség=[0.0, 0.0, 0.0, 0.0], Mértékegység=["kWh", "kWh", "kWh", "hó"], Nettó_egységár=[0.0, 0.0, 0.0, 0.0], ÁFA=[27.0, 27.0, 27.0, 27.0]))
