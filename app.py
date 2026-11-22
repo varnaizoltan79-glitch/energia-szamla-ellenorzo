@@ -127,10 +127,15 @@ def _feldolgoz_alteo_pdf(dok, szoveg, adat):
     adat["szolgaltato_kulcs"] = "ALTEO"
     oldal1_sorok = _vizszintes_sorok(dok[0])
 
+        m_sz_teljes = re.search(r"Számlaszám\s*:?\s*(\d{6,})", szoveg)
+    if m_sz_teljes:
+        adat["szamlaszam"] = m_sz_teljes.group(1)
+
     for s in oldal1_sorok:
         m_sz = re.search(r"Számlaszám[:\s]+(\d{6,})", s)
         if m_sz:
             adat["szamlaszam"] = m_sz.group(1)
+
         m_ido = re.search(r"Időszak[:\s]+(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", s)
         if m_ido:
             adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
