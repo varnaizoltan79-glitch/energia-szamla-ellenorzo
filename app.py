@@ -104,48 +104,75 @@ SZOLGALTATO_SABLONOK = {
 
 def _feldolgoz_alteo_pdf(dok, szoveg, adat):
     adat["szolgaltato_kulcs"] = "ALTEO"
-    m_sz = re.search(r"Számlaszám[:\s]+(\d{6,})", szoveg)
-    if m_sz:
-        adat["szamlaszam"] = m_sz.group(1).strip()
-    m_ido = re.search(r"Időszak[:\s]+(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", szoveg)
-    if m_ido:
-        adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
-        adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
-    m_br = re.search(r"Fizetendő\s*összesen[:\s]+([\d\.\s\xa0]+,\d{2})\s*Ft|Összesen[:\s]+[\d\.\s\xa0]+,\d{2}\s+[\d\.\s\xa0]+,\d{2}\s+([\d\.\s\xa0]+,\d{2})", szoveg)
+    sorok = list(s.strip() for s in szoveg.splitlines() if s.strip())
+
+    for i, s in enumerate(sorok):
+        m_sz = re.search(r"Számlaszám[:\s]+(\d{6,})", s)
+        if m_sz:
+            adat["szamlaszam"] = m_sz.group(1)
+        elif s.rstrip(":") == "Számlaszám" and i + 1 < len(sorok) and re.fullmatch(r"\d{6,}", sorok[i + 1]):
+            adat["szamlaszam"] = sorok[i + 1]
+
+        m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", s)
+        if m_ido:
+            adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
+            adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
+
+        if s.rstrip(":") == "Számla kelte" and i + 1 < len(sorok) and re.fullmatch(r"\d{4}\.\d{2}\.\d{2}", sorok[i + 1]):
+            adat["kelte"] = datetime.strptime(sorok[i + 1], "%Y.%m.%d").date()
+        if s.rstrip(":") == "Fizetési határidő" and i + 1 < len(sorok) and re.fullmatch(r"\d{4}\.\d{2}\.\d{2}", sorok[i + 1]):
+            adat["hatarido"] = datetime.strptime(sorok[i + 1], "%Y.%m.%d").date()
+
+    m_br = re.search(r"Fizetendő\s*összesen[:\s]+([\d\.\s\xa0]+,\d{2})\s*Ft", szoveg)
     if m_br:
-        br_nyers = m_br.group(1) or m_br.group(2)
-        br_val = _hu_szam(br_nyers)
+        br_val = _hu_szam(m_br.group(1))
         if br_val:
             adat["brutto"] = int(round(br_val))
 
-    oldal1_sorok = list(s.strip() for s in (dok[0].get_text("text") or "").splitlines() if s.strip())
-    szam_minta = r"-?\d[\d\.]*,\d+"
-    me_minta = r"(kWh|MWh|csp|kW|kVAhr|db|hó|m3|MJ|GJ)"
-    sor_minta = re.compile(rf"^({szam_minta})\s+{me_minta}\s+({szam_minta})\s*Ft\s+({szam_minta}|-?\d[\d\.]*)\s+(27|5|18|0|AHK)\b")
-
+    me_halmaz = {"kWh", "MWh", "csp", "kW", "kVAhr", "db", "hó", "m3", "MJ", "GJ"}
+    kizaro = ("összesen", "Tétel megnevezés", "Mennyiség", "M.e.", "Egységár", "Nettó", "ÁFA", "Bruttó", "Pénzeszközök", "Energia-jövedéki", "Rendszerhasználati", "Közbeszerzési díjak", "EKR díj", "Számlaszám", "Oldal:", "Forgalmi tételek")
     talalatok = list()
-    for idx, sor in enumerate(oldal1_sorok):
-        m = sor_minta.match(sor)
-        if not m:
+
+    for i, s in enumerate(sorok):
+        if s not in me_halmaz or i == 0 or i + 3 >= len(sorok):
             continue
-        menny = _hu_szam(m.group(1))
-        me = m.group(2)
-        ar = _hu_szam(m.group(3))
-        afa_nyers = m.group(5)
-        afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
+        menny = _hu_szam(sorok[i - 1])
+        ar_sor = sorok[i + 1]
+        if menny is None or "Ft" not in ar_sor:
+            continue
+        ar = _hu_szam(ar_sor.replace("Ft", ""))
+        if ar is None:
+            continue
 
-        nev = oldal1_sorok[idx - 1] if idx > 0 else "Díjtétel"
-        if idx + 1 < len(oldal1_sorok):
-            kov = oldal1_sorok[idx + 1]
-            if not sor_minta.match(kov) and not re.search(r"(?:összesen|Tétel megnevezés|Pénzeszközök|Energia-jövedéki|Rendszerhasználati|Közbeszerzési díjak|EKR díj|Számlaszám)", kov, re.I):
-                nev = f"{nev} {kov}".strip()
+        afa = 27.0
+        for k in range(i + 2, min(i + 5, len(sorok))):
+            if sorok[k] == "AHK":
+                afa = 0.0
+                break
+            if sorok[k] in ("27", "5", "18", "0"):
+                afa = float(sorok[k])
+                break
 
-        if menny is not None and ar is not None:
-            talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
+        nev_reszek = list()
+        if i >= 2:
+            elozo = sorok[i - 2]
+            if not any(kz.lower() in elozo.lower() for kz in kizaro) and not re.match(r"^-?\d[\d\.]*,\d+", elozo):
+                nev_reszek.append(elozo)
+        for k in range(i + 4, min(i + 7, len(sorok))):
+            kov = sorok[k]
+            if any(kz.lower() in kov.lower() for kz in kizaro) or re.match(r"^-?\d[\d\.]*,\d+", kov) or kov in me_halmaz:
+                break
+            if not re.search(r"szolgáltatást tartalmaz", kov, re.I):
+                nev_reszek.append(kov)
+                break
+
+        nev = " ".join(nev_reszek).strip() or "Díjtétel"
+        talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": s, "Nettó egységár": ar, "ÁFA (%)": afa})
 
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
+
 
 def feldolgoz_pdf(fajl):
     pdf_bytes = fajl.read()
