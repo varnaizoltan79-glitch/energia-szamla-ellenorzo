@@ -787,12 +787,12 @@ def mutat_torzsadatok():
                         st.session_state["szolg_torles_ver"] = sz_ver + 1
                         st.rerun()
 
-def mutat_kimutatasok():
-    st.header("Rögzített számlák és havi kimutatások")
+def _betolt_szurt_szamlak(kulcs_prefix):
     lista = supabase.table("szamlak").select("*").order("jovahagyas_ideje", desc=True).execute().data or list()
     if not lista:
         st.info("Még nincs mentett számla.")
-        return
+        return None, None, None, None, None, None
+
     h_map = {h["id"]: h["megnevezes"] for h in (supabase.table("felhasznalasi_helyek").select("id, megnevezes").execute().data or list())}
     sz_map = {s["id"]: s["nev"] for s in (supabase.table("szolgaltatok").select("id, nev").execute().data or list())}
 
@@ -800,8 +800,8 @@ def mutat_kimutatasok():
     osszes_hely = sorted(list({h_map.get(s["felhasznalasi_hely_id"], "Ismeretlen") for s in lista}))
 
     fs1, fs2 = st.columns(2)
-    val_honapok = fs1.multiselect("📅 Szűrés elszámolási hónapra (üresen = összes):", osszes_honap)
-    val_helyek = fs2.multiselect("🏭 Szűrés felhasználási helyre (üresen = összes):", osszes_hely)
+    val_honapok = fs1.multiselect("📅 Szűrés elszámolási hónapra (üresen = összes):", osszes_honap, key=f"{kulcs_prefix}_ho")
+    val_helyek = fs2.multiselect("🏭 Szűrés felhasználási helyre (üresen = összes):", osszes_hely, key=f"{kulcs_prefix}_hely")
 
     szurt_lista = list()
     for s in lista:
@@ -815,7 +815,7 @@ def mutat_kimutatasok():
 
     if not szurt_lista:
         st.warning("A megadott szűrőkkel nincs találat.")
-        return
+        return None, None, None, None, None, None
 
     szamla_idk = list(s["id"] for s in szurt_lista)
     osszes_tetel = supabase.table("szamla_tetelek").select("*").in_("szamla_id", szamla_idk).execute().data or list()
@@ -835,8 +835,72 @@ def mutat_kimutatasok():
         s_netto = netto_per_szamla.get(sid, 0.0)
         s_kwh = energia_kwh_per_szamla.get(sid, 0.0)
         szumma_egysegar = round(s_netto / s_kwh, 2) if s_kwh > 0 else None
-        sorok.append({"Számlaszám": s["szamlaszam"], "Elszámolási hónap": tiszta_honap(s.get("elszamolasi_honap")), "Felhasználási hely": h_map.get(s["felhasznalasi_hely_id"], ""), "Szolgáltató": sz_map.get(s["szolgaltato_id"], ""), "Időszak kezdete": s["idoszak_tol"], "Időszak vége": s["idoszak_ig"], "Bruttó összeg (Ft)": int(round(float(s["szamlan_szereplo_brutto"]))), "Szumma nettó egységár (Ft/kWh)": szumma_egysegar, "Státusz": s["ellenorzes_statusz"], "PDF fájl": s["pdf_utvonal"]})
-    df = pd.DataFrame(sorok)
+        sorok.append({
+            "Számlaszám": s["szamlaszam"],
+            "Elszámolási hónap": tiszta_honap(s.get("elszamolasi_honap")),
+            "Felhasználási hely": h_map.get(s["felhasznalasi_hely_id"], ""),
+            "Szolgáltató": sz_map.get(s["szolgaltato_id"], ""),
+            "Időszak kezdete": s["idoszak_tol"],
+            "Időszak vége": s["idoszak_ig"],
+            "Bruttó összeg (Ft)": int(round(float(s["szamlan_szereplo_brutto"]))),
+            "Szumma nettó egységár (Ft/kWh)": szumma_egysegar,
+            "Státusz": s["ellenorzes_statusz"],
+            "PDF fájl": s["pdf_utvonal"]
+        })
+    return szurt_lista, pd.DataFrame(sorok), osszes_tetel, netto_per_szamla, energia_kwh_per_szamla, h_map
+
+def mutat_rogzitett_szamlak():
+    st.header("📑 Rögzített számlák")
+    szurt_lista, df, _, _, _, h_map = _betolt_szurt_szamlak("rogz")
+    if szurt_lista is None:
+        return
+
+    rogz_ver = st.session_state.get("rogzitett_ver", 0)
+    st.caption("💡 Kattints egy sor elejére a táblázatban a csatolt PDF számla megnyitásához!")
+    esemeny = st.dataframe(df, use_container_width=True, on_select="rerun", selection_mode="single-row", key=f"rogz_df_{rogz_ver}")
+    if esemeny.selection.rows:
+        kiv_idx = next(iter(esemeny.selection.rows))
+        kiv_szamla = szurt_lista[kiv_idx]
+        if kiv_szamla.get("pdf_utvonal"):
+            mutat_pdf_ablak(kiv_szamla["pdf_utvonal"], kiv_szamla["szamlaszam"])
+        else:
+            st.warning("Ehhez a számlához nem lett PDF fájl feltöltve.")
+
+    csv = df.to_csv(index=False).encode("utf-8-sig")
+    st.download_button("📥 Rögzített számlák letöltése Excelbe (CSV)", data=csv, file_name=f"rogzitett_szamlak_{date.today()}.csv", mime="text/csv")
+
+    st.divider()
+    st.subheader("🗑️ Számla törlése")
+    torles_opciok = {f"#{s['id']} – {s['szamlaszam']} ({tiszta_honap(s.get('elszamolasi_honap'))}, {h_map.get(s['felhasznalasi_hely_id'], '')}, {ft_szoveg(s['szamlan_szereplo_brutto'])})": s for s in szurt_lista}
+    valasztott_torles = st.selectbox("Válaszd ki a törlendő számlát:", list(torles_opciok.keys()), index=None, placeholder="Válassz ki egy számlát a törléshez...", key=f"torles_sel_{rogz_ver}")
+    if valasztott_torles:
+        kiv_torles = torles_opciok[valasztott_torles]
+        if st.button("🗑️ Kiválasztott számla törlése"):
+            st.session_state["torles_megerosites_id"] = kiv_torles["id"]
+        if st.session_state.get("torles_megerosites_id") == kiv_torles["id"]:
+            st.warning(f"⚠️ Biztos, hogy törölni kívánja a számlát? (**{kiv_torles['szamlaszam']}**)")
+            tc1, tc2, _ = st.columns((1.2, 1.2, 4))
+            if tc1.button("✅ Igen", type="primary"):
+                supabase.table("szamla_tetelek").delete().eq("szamla_id", kiv_torles["id"]).execute()
+                if kiv_torles.get("pdf_utvonal"):
+                    kozos_e = supabase.table("szamlak").select("id").eq("pdf_utvonal", kiv_torles["pdf_utvonal"]).neq("id", kiv_torles["id"]).execute().data or list()
+                    if not kozos_e:
+                        supabase.storage.from_("szamlak-pdf").remove(list((kiv_torles["pdf_utvonal"],)))
+                supabase.table("szamlak").delete().eq("id", kiv_torles["id"]).execute()
+                st.session_state.pop("torles_megerosites_id", None)
+                st.session_state["rogzitett_ver"] = rogz_ver + 1
+                st.success(f"✅ A(z) {kiv_torles['szamlaszam']} számú számla sikeresen törölve lett!")
+                st.rerun()
+            if tc2.button("❌ Nem"):
+                st.session_state.pop("torles_megerosites_id", None)
+                st.session_state["rogzitett_ver"] = rogz_ver + 1
+                st.rerun()
+
+def mutat_kimutatasok():
+    st.header("📊 Kimutatások és Riportok")
+    szurt_lista, df, osszes_tetel, netto_per_szamla, energia_kwh_per_szamla, h_map = _betolt_szurt_szamlak("kim")
+    if szurt_lista is None:
+        return
 
     ossz_netto_mind = sum(netto_per_szamla.values())
     ossz_kwh_mind = sum(energia_kwh_per_szamla.values())
@@ -869,7 +933,6 @@ def mutat_kimutatasok():
             ea_df["Szumma nettó egységár (Ft/kWh)"] = (ea_df["Nettó"] / ea_df["kWh"]).round(2)
             ea_sorrend = sorted(list(ea_df["Elszámolási hónap"].unique()), key=honap_kulcs)
             st.altair_chart(alt.Chart(ea_df).mark_bar().encode(x=alt.X("Elszámolási hónap:N", sort=ea_sorrend, axis=alt.Axis(labelAngle=0, title="Elszámolási hónap")), y=alt.Y("Szumma nettó egységár (Ft/kWh):Q", axis=alt.Axis(title="Szumma nettó egységár (Ft/kWh)")), color=alt.Color("Felhasználási hely:N", title="Felhasználási hely"), xOffset="Felhasználási hely:N", tooltip=[alt.Tooltip("Elszámolási hónap:N"), alt.Tooltip("Felhasználási hely:N"), alt.Tooltip("Szumma nettó egységár (Ft/kWh):Q", format=",.2f")]).properties(height=360), use_container_width=True)
-
     with tab_tetel:
         szamla_map = {s["id"]: s for s in szurt_lista}
         if not osszes_tetel:
@@ -886,47 +949,6 @@ def mutat_kimutatasok():
             with tc2:
                 st.altair_chart(alt.Chart(szurt_t_df).mark_line(point=True).encode(x=alt.X("Elszámolási hónap:N", sort=ho_sorrend_t, axis=alt.Axis(labelAngle=0)), y=alt.Y("mean(Nettó egységár (Ft)):Q", axis=alt.Axis(title="Nettó egységár (Ft)")), color="Felhasználási hely:N").properties(height=280), use_container_width=True)
             st.dataframe(t_df, use_container_width=True, hide_index=True)
-
-    kim_ver = st.session_state.get("kimutatas_ver", 0)
-    st.caption("💡 Kattints egy sor elejére a táblázatban a csatolt PDF számla megnyitásához!")
-    esemeny = st.dataframe(df, use_container_width=True, on_select="rerun", selection_mode="single-row", key=f"kim_df_{kim_ver}")
-    if esemeny.selection.rows:
-        kiv_idx = next(iter(esemeny.selection.rows))
-        kiv_szamla = szurt_lista[kiv_idx]
-        if kiv_szamla.get("pdf_utvonal"):
-            mutat_pdf_ablak(kiv_szamla["pdf_utvonal"], kiv_szamla["szamlaszam"])
-        else:
-            st.warning("Ehhez a számlához nem lett PDF fájl feltöltve.")
-
-    csv = df.to_csv(index=False).encode("utf-8-sig")
-    st.download_button("📥 Szűrt kimutatás letöltése Excelbe (CSV)", data=csv, file_name=f"energia_riport_{date.today()}.csv", mime="text/csv")
-
-    st.divider()
-    st.subheader("🗑️ Számla törlése")
-    torles_opciok = {f"#{s['id']} – {s['szamlaszam']} ({tiszta_honap(s.get('elszamolasi_honap'))}, {h_map.get(s['felhasznalasi_hely_id'], '')}, {ft_szoveg(s['szamlan_szereplo_brutto'])})": s for s in szurt_lista}
-    valasztott_torles = st.selectbox("Válaszd ki a törlendő számlát:", list(torles_opciok.keys()), index=None, placeholder="Válassz ki egy számlát a törléshez...", key=f"torles_sel_{kim_ver}")
-    if valasztott_torles:
-        kiv_torles = torles_opciok[valasztott_torles]
-        if st.button("🗑️ Kiválasztott számla törlése"):
-            st.session_state["torles_megerosites_id"] = kiv_torles["id"]
-        if st.session_state.get("torles_megerosites_id") == kiv_torles["id"]:
-            st.warning(f"⚠️ Biztos, hogy törölni kívánja a számlát? (**{kiv_torles['szamlaszam']}**)")
-            tc1, tc2, _ = st.columns((1.2, 1.2, 4))
-            if tc1.button("✅ Igen", type="primary"):
-                supabase.table("szamla_tetelek").delete().eq("szamla_id", kiv_torles["id"]).execute()
-                if kiv_torles.get("pdf_utvonal"):
-                    kozos_e = supabase.table("szamlak").select("id").eq("pdf_utvonal", kiv_torles["pdf_utvonal"]).neq("id", kiv_torles["id"]).execute().data or list()
-                    if not kozos_e:
-                        supabase.storage.from_("szamlak-pdf").remove(list((kiv_torles["pdf_utvonal"],)))
-                supabase.table("szamlak").delete().eq("id", kiv_torles["id"]).execute()
-                st.session_state.pop("torles_megerosites_id", None)
-                st.session_state["kimutatas_ver"] = kim_ver + 1
-                st.success(f"✅ A(z) {kiv_torles['szamlaszam']} számú számla sikeresen törölve lett!")
-                st.rerun()
-            if tc2.button("❌ Nem"):
-                st.session_state.pop("torles_megerosites_id", None)
-                st.session_state["kimutatas_ver"] = kim_ver + 1
-                st.rerun()
 
 def mutat_szamla_rogzites(user_id):
     fv = st.session_state["form_ver"]
@@ -1070,12 +1092,15 @@ valasztott_nev = st.sidebar.selectbox("Belépett energetikus:", list(users_map.k
 user_sor = users_map[valasztott_nev]
 st.sidebar.info(f"Szerepkör: **{user_sor['szerepkor']}**")
 
-menu = st.sidebar.radio("Menü", list(("🧾 Számla ellenőrzés és feltöltés", "📊 Kimutatások és Riportok", "🔄 Helyettesítések", "⚙️ Törzsadatok")), on_change=urit_urlap)
+menu = st.sidebar.radio("Menü", list(("🧾 Számla ellenőrzés és feltöltés", "📑 Rögzített számlák", "📊 Kimutatások és Riportok", "🔄 Helyettesítések", "⚙️ Törzsadatok")), on_change=urit_urlap)
 if menu == "🧾 Számla ellenőrzés és feltöltés":
     mutat_szamla_rogzites(int(user_sor["id"]))
+elif menu == "📑 Rögzített számlák":
+    mutat_rogzitett_szamlak()
 elif menu == "📊 Kimutatások és Riportok":
     mutat_kimutatasok()
 elif menu == "🔄 Helyettesítések":
     mutat_helyettesitesek()
 else:
     mutat_torzsadatok()
+
