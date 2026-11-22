@@ -994,7 +994,7 @@ def mutat_szamla_rogzites(user_id):
         urit_urlap()
         st.rerun()
 
-        if "utolso_mentes" in st.session_state:
+    if "utolso_mentes" in st.session_state:
         st.success(st.session_state.pop("utolso_mentes"))
         components.html(
             """
@@ -1013,6 +1013,7 @@ def mutat_szamla_rogzites(user_id):
             """,
             height=0
         )
+
 
 
     helyek = get_helyek(user_id)
