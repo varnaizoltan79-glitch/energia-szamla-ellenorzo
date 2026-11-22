@@ -624,8 +624,6 @@ def szamol_tetelek(df):
         menny = Decimal(str(m_val))
         ar = Decimal(str(a_val))
         if (menny == 0 and ar == 0) or (str(row.get("Megnevezés") or "").strip() == "Bruttó díj kompenzáció" and ar == 0):
-         continue
-
             continue
         afa_val = row.get("ÁFA (%)")
         afa = Decimal(str(afa_val)) if (afa_val is not None and not pd.isna(afa_val)) else Decimal("27.0")
@@ -635,6 +633,7 @@ def szamol_tetelek(df):
         ossz_brutto += brutto
         tetelek.append({"megnevezes_eredeti": str(row.get("Megnevezés") or "Díjtétel"), "mennyiseg": float(menny), "mertekegyseg": str(row.get("Mértékegység") or "kWh"), "egysegar_netto": float(ar), "szamitott_netto": float(netto), "afa_kulcs": float(afa), "szamitott_brutto": float(brutto)})
     return ossz_netto, ossz_brutto, tetelek
+
 
 def mentes_adatbazisba(uj_szamla, tetelek, fajl, gyujto_marad=False):
     try:
