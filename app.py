@@ -208,13 +208,13 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
             if "adóalapon kívüli" not in s_low:
                 akt_afa = 27.0
 
-        if "mennyiség (kvarh)" in s_low:
+        if "(kvarh)" in s_low:
             akt_me = "kVArh"
-        elif "mennyiség (kw)" in s_low:
+        elif "(kw)" in s_low:
             akt_me = "kW"
         elif "csatl.pont/db" in s_low or "(db)" in s_low:
             akt_me = "db"
-        elif "mennyiség (kwh)" in s_low:
+        elif "(kwh)" in s_low:
             akt_me = "kWh"
 
         s_tagolt = re.sub(r"(\d{4}\.\d{2}\.\d{2}-\d{4}\.\d{2}\.\d{2})(\d)", r"\1 \2", s)
@@ -224,7 +224,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
 
         nev = m_tetel.group(1).strip()
         maradek = m_tetel.group(3).strip()
-        szamok_raw = re.findall(r"-?\d[\d\s\xa0]*,\d+|-?\d[\d\s\xa0]*", maradek)
+        szamok_raw = re.findall(r"-?\d{1,3}(?:[\s\xa0]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?", maradek)
         szamok = list(x for x in (_hu_szam(r) for r in szamok_raw) if x is not None)
         if not szamok:
             continue
@@ -233,13 +233,14 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
             netto_ertek = szamok[-1]
             talalatok.append({"Megnevezés": nev, "Mennyiség": 1.0, "Mértékegység": "db", "Nettó egységár": netto_ertek, "ÁFA (%)": 27.0})
         elif len(szamok) >= 2:
-            menny = szamok[0]
-            ar = szamok[1]
+            menny = szamok
+            ar = szamok
             talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": akt_me, "Nettó egységár": ar, "ÁFA (%)": akt_afa})
 
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
+
 
 def feldolgoz_pdf(fajl):
     pdf_bytes = fajl.read()
