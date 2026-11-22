@@ -537,87 +537,61 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
     tetel_minta = re.compile(rf"(?:({egyes_szam})\s+)?({egyes_szam})\s*{me_minta}\s*({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?(?:\s+({egyes_szam}))?(?:\s+(27|5|18|0|AHK)\b)?")
 
     talalatok = list()
-    for oldal in dok:
-        oldal_szoveg = oldal.get_text("text") or ""
-        if "SZÁMLARÉSZLETEZŐ" not in re.sub(r"\s+", "", oldal_szoveg.upper()):
-            continue
-
-        szavak = oldal.get_text("words")
-        if not szavak:
-            continue
-
-        rendezett = sorted(szavak, key=_rendez_tavho_szo)
-        _, akt_y, *_ = next(iter(rendezett))
-        akt_szavak = list()
-        tablazat_sorok = list()
-        for x0, y0, _, _, szo, *_ in rendezett:
-            if x0 > 555.0:
-                continue
-            if abs(y0 - akt_y) <= 8.0:
-                akt_szavak.append((x0, szo))
-            else:
-                akt_szavak.sort(key=_rendez_x_szo)
-                tablazat_sorok.append(" ".join(ss for _, ss in akt_szavak))
-                akt_y = y0
-                akt_szavak = [(x0, szo)]
-        if akt_szavak:
-            akt_szavak.sort(key=_rendez_x_szo)
-            tablazat_sorok.append(" ".join(ss for _, ss in akt_szavak))
-
-        kategoria = ""
-        elozo_nev = ""
-        for s in tablazat_sorok:
-            s_low = s.lower()
-            if "fűtési célú költségek" in s_low:
-                kategoria = "Fűtési célú - "
-                elozo_nev = ""
-                continue
-            elif "vízfelmelegítési célú költségek" in s_low:
-                kategoria = "Vízfelmelegítési - "
-                elozo_nev = ""
-                continue
-            elif "viziközmű-szolgáltatási díjak" in s_low or "víziközmű-szolgáltatási díjak" in s_low:
-                kategoria = "Víziközmű - "
-                elozo_nev = ""
-                continue
-            elif "bruttó számlaérték" in s_low or "számla áfa összesítője" in s_low or "hőközponti és épület" in s_low:
-                break
-
-            if s_low.startswith("fizetendő ") or "összesen" in s_low or "tétel megnevezése" in s_low:
-                continue
-
-            m = tetel_minta.search(s)
-            if not m:
-                tiszta_sor = re.sub(r"\d{4}\.\d{2}(?:\.\d{2})?(?:\s*[-–]?\s*\d{4}\.\d{2}\.\d{2}|\s*hó)?", "", s).strip(" -–:|")
-                if tiszta_sor and not re.search(r"\d", tiszta_sor) and len(tiszta_sor) >= 4:
-                    elozo_nev = tiszta_sor
-                continue
-
-            bal_resz = s[:m.start()].strip()
-            bal_resz = re.sub(r"\d{4}\.\d{2}(?:\.\d{2})?(?:\s*[-–]?\s*\d{4}\.\d{2}\.\d{2}|\s*hó)?", "", bal_resz).strip(" -–:|")
-            me = m.group(3).replace("m³", "m3")
-            alap_nev_tipus = "Alapdíj" if me in ("MW", "kW", "hó") else ("Hődíj" if me in ("GJ", "MWh", "kWh") else "Távhő díjtétel")
-            nyers_nev = bal_resz or elozo_nev or alap_nev_tipus
+    kategoria = ""
+    elozo_nev = ""
+    for s in osszes_sor:
+        s_low = s.lower()
+        if "fűtési célú költségek" in s_low:
+            kategoria = "Fűtési célú - "
             elozo_nev = ""
-            nev = f"{kategoria}{nyers_nev}".strip()
+            continue
+        elif "vízfelmelegítési célú költségek" in s_low:
+            kategoria = "Vízfelmelegítési - "
+            elozo_nev = ""
+            continue
+        elif "viziközmű-szolgáltatási díjak" in s_low or "víziközmű-szolgáltatási díjak" in s_low:
+            kategoria = "Víziközmű - "
+            elozo_nev = ""
+            continue
+        elif "bruttó számlaérték" in s_low or "számla áfa összesítője" in s_low or "hőközponti és épület" in s_low:
+            break
 
-            szorzo = _hu_szam(m.group(1)) or 1.0
-            menny = (_hu_szam(m.group(2)) or 0.0) * szorzo
-            ar = _hu_szam(m.group(4))
-            netto_oszlop = _hu_szam(m.group(5))
-            afa_nyers = m.group(6)
-            afa = 5.0 if not afa_nyers else (0.0 if afa_nyers == "AHK" else float(afa_nyers))
+        if s_low.startswith("fizetendő ") or "összesen" in s_low or "tétel megnevezése" in s_low:
+            continue
 
-            if ar is not None and netto_oszlop is not None and menny > 0:
-                if abs((menny * ar) - netto_oszlop) > 5.0:
-                    ar = round(netto_oszlop / menny, 4)
+        m = tetel_minta.search(s)
+        if not m:
+            tiszta_sor = re.sub(r"\d{4}\.\d{2}(?:\.\d{2})?(?:\s*[-–]?\s*\d{4}\.\d{2}\.\d{2}|\s*hó)?", "", s).strip(" -–:|")
+            if tiszta_sor and not re.search(r"\d", tiszta_sor) and len(tiszta_sor) >= 4:
+                elozo_nev = tiszta_sor
+            continue
 
-            if ar is not None and menny > 0:
-                talalatok.append({"Megnevezés": nev, "Mennyiség": round(menny, 4), "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
+        bal_resz = s[:m.start()].strip()
+        bal_resz = re.sub(r"\d{4}\.\d{2}(?:\.\d{2})?(?:\s*[-–]?\s*\d{4}\.\d{2}\.\d{2}|\s*hó)?", "", bal_resz).strip(" -–:|")
+        me = m.group(3).replace("m³", "m3")
+        alap_nev_tipus = "Alapdíj" if me in ("MW", "kW", "hó") else ("Hődíj" if me in ("GJ", "MWh", "kWh") else "Távhő díjtétel")
+        nyers_nev = bal_resz or elozo_nev or alap_nev_tipus
+        elozo_nev = ""
+        nev = f"{kategoria}{nyers_nev}".strip()
+
+        szorzo = _hu_szam(m.group(1)) or 1.0
+        menny = (_hu_szam(m.group(2)) or 0.0) * szorzo
+        ar = _hu_szam(m.group(4))
+        netto_oszlop = _hu_szam(m.group(5))
+        afa_nyers = m.group(6)
+        afa = 5.0 if not afa_nyers else (0.0 if afa_nyers == "AHK" else float(afa_nyers))
+
+        if ar is not None and netto_oszlop is not None and menny > 0:
+            if abs((menny * ar) - netto_oszlop) > 5.0:
+                ar = round(netto_oszlop / menny, 4)
+
+        if ar is not None and menny > 0:
+            talalatok.append({"Megnevezés": nev, "Mennyiség": round(menny, 4), "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
+
 
 
 
