@@ -1083,10 +1083,10 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
 
     szamla_idk = list(s["id"] for s in szurt_lista)
     osszes_tetel = supabase.table("szamla_tetelek").select("*").in_("szamla_id", szamla_idk).execute().data or list()
-    netto_per_szamla = dict()
+        netto_per_szamla = dict()
     fogyasztas_per_szamla = dict()
     fogyasztas_me_per_szamla = dict()
-    szennyviz_m3_per_szamla = dict()
+    tartalek_m3_per_szamla = dict()
 
     for t in osszes_tetel:
         sid = t["szamla_id"]
@@ -1098,16 +1098,20 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
         if ("energiadíj" in megn or "energia díj" in megn or "áramdíj" in megn or "földgáz" in megn or "gázdíj" in megn) and me in ("kwh", "m3", "m³", "mj", "gj"):
             fogyasztas_per_szamla[sid] = fogyasztas_per_szamla.get(sid, 0.0) + menny
             fogyasztas_me_per_szamla[sid] = "m³" if me in ("m3", "m³") else t.get("mertekegyseg", "kWh")
+        elif "hődíj" in megn and me in ("gj", "mj"):
+            fogyasztas_per_szamla[sid] = fogyasztas_per_szamla.get(sid, 0.0) + menny
+            fogyasztas_me_per_szamla[sid] = t.get("mertekegyseg", "GJ")
         elif "ivóvíz" in megn and me in ("m3", "m³"):
             fogyasztas_per_szamla[sid] = fogyasztas_per_szamla.get(sid, 0.0) + menny
             fogyasztas_me_per_szamla[sid] = "m³"
-        elif "szennyvíz" in megn and me in ("m3", "m³"):
-            szennyviz_m3_per_szamla[sid] = szennyviz_m3_per_szamla.get(sid, 0.0) + menny
+        elif ("szennyvíz" in megn or "vízfelmelegítési" in megn) and me in ("m3", "m³"):
+            tartalek_m3_per_szamla[sid] = tartalek_m3_per_szamla.get(sid, 0.0) + menny
 
-    for sid, szv_menny in szennyviz_m3_per_szamla.items():
-        if fogyasztas_per_szamla.get(sid, 0.0) == 0.0 and szv_menny > 0:
-            fogyasztas_per_szamla[sid] = szv_menny
+    for sid, m3_menny in tartalek_m3_per_szamla.items():
+        if fogyasztas_per_szamla.get(sid, 0.0) == 0.0 and m3_menny > 0:
+            fogyasztas_per_szamla[sid] = m3_menny
             fogyasztas_me_per_szamla[sid] = "m³"
+
 
     sorok = list()
     for s in szurt_lista:
