@@ -409,7 +409,13 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl, gyujto_marad=False):
     try:
         alap_szamlaszam = uj_szamla["szamlaszam"].strip()
         uj_szamla["szamlaszam"] = alap_szamlaszam
-        res = supabase.table("szamlak").insert(uj_szamla).execute()
+        try:
+            res = supabase.table("szamlak").insert(uj_szamla).execute()
+        except Exception as ins_hiba:
+            if "duplicate" in str(ins_hiba).lower() or "23505" in str(ins_hiba):
+                st.warning("⚠️ Ez a felhasználási hely (POD) már rögzítve van ehhez a számlaszámhoz! Válaszd a következő mérési pontot a fenti legördülő listából.")
+                return
+            raise ins_hiba
 
         sid = next(iter(res.data))["id"]
         for t in tetelek:
@@ -427,6 +433,7 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl, gyujto_marad=False):
         st.rerun()
     except Exception as hiba:
         st.error(f"Pontos hiba oka: {hiba}")
+
 
 
 
