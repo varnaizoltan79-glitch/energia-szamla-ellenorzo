@@ -216,6 +216,9 @@ kelte = pdf_adat["kelte"] if pdf_adat else date.today()
 hatarido = pdf_adat["hatarido"] if pdf_adat else date.today()
 tol = c3.date_input("Elszámolási időszak kezdete", value=pdf_adat["tol"] if pdf_adat else date.today(), key=f"t_{f_id}")
 ig = c3.date_input("Elszámolási időszak vége", value=pdf_adat["ig"] if pdf_adat else date.today(), key=f"i_{f_id}")
+datum_rendben = tol <= ig
+if not datum_rendben:
+    c3.error("⚠️ Az időszak kezdete nem lehet későbbi, mint a vége!")
 elszamolasi_honap = szamol_elszamolasi_honap(ig)
 c3.info(f"📅 Elszámolási hónap: **{elszamolasi_honap}**")
 
@@ -236,9 +239,9 @@ m1.metric("Számított Nettó", f"{ossz_netto:,.0f} Ft")
 m2.metric("Számított Bruttó", f"{ossz_brutto:,.0f} Ft")
 m3.metric("Eltérés a számlától", f"{elteres:,.2f} Ft")
 
-egyezik = (elteres <= Decimal("2.00")) and (len(tetelek) > 0) and (szamlan_brutto > 0)
+egyezik = (elteres <= Decimal("2.00")) and (len(tetelek) > 0) and (szamlan_brutto > 0) and datum_rendben
 if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
-if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha a számított bruttó összeg egyezik a számla összegével.")
+if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha az összegek egyeznek és a dátumok helyesek.")
 
 gomb = st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary", disabled=not egyezik)
 forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
