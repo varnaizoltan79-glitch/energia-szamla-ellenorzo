@@ -93,10 +93,9 @@ SZOLGALTATO_SABLONOK = {
         "szolgaltato_nev_kulcs": "MVM",
     },
     "VIZMU": {
-        "azonositok": ("debreceni vízmű", "23458208", "tiszamenti regionális vízművek", "11265832", "trvzrt.hu"),
+        "azonositok": ("debreceni vízmű", "23458208", "tiszamenti regionális vízművek", "11265832", "trvzrt.hu", "érv. zrt", "érv zrt", "11069186", "ervzrt.hu"),
         "szolgaltato_nev_kulcs": "vízmű",
     }
-}
 
 
 
@@ -334,8 +333,11 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
     szoveg_low = szoveg.lower()
     if "tiszamenti" in szoveg_low or "11265832" in szoveg_low or "trvzrt" in szoveg_low:
         adat["szolgaltato_kulcs"] = "tiszamenti"
+    elif "érv" in szoveg_low or "11069186" in szoveg_low or "ervzrt" in szoveg_low:
+        adat["szolgaltato_kulcs"] = "érv"
     else:
         adat["szolgaltato_kulcs"] = "debreceni vízmű"
+
 
     m_sz = re.search(r"Számla\s*sorszáma\s*:?\s*([A-Z0-9/-]{6,})", szoveg, re.I)
     if m_sz:
