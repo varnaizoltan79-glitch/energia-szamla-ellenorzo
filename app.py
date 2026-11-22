@@ -354,8 +354,9 @@ if menu == "📊 Kimutatások és Riportok":
             t_csv = t_df.to_csv(index=False).encode("utf-8-sig")
             st.download_button("📥 Díjtételek letöltése Excelbe (CSV)", data=t_csv, file_name=f"dijtetelek_riport_{date.today()}.csv", mime="text/csv")
 
+    kim_ver = st.session_state.get("kimutatas_ver", 0)
     st.caption("💡 Kattints egy sor elejére a táblázatban a csatolt PDF számla megnyitásához!")
-    esemeny = st.dataframe(df, use_container_width=True, on_select="rerun", selection_mode="single-row")
+    esemeny = st.dataframe(df, use_container_width=True, on_select="rerun", selection_mode="single-row", key=f"kim_df_{kim_ver}")
     if esemeny.selection.rows:
         kiv_idx = next(iter(esemeny.selection.rows))
         kiv_szamla = szurt_lista[kiv_idx]
@@ -370,15 +371,13 @@ if menu == "📊 Kimutatások és Riportok":
     st.divider()
     st.subheader("🗑️ Számla törlése")
     torles_opciok = {f"#{s['id']} – {s['szamlaszam']} ({tiszta_honap(s.get('elszamolasi_honap'))}, {h_map.get(s['felhasznalasi_hely_id'], '')}, {ft_szoveg(s['szamlan_szereplo_brutto'])})": s for s in szurt_lista}
-    valasztott_torles = st.selectbox("Válaszd ki a törlendő számlát:", list(torles_opciok.keys()))
-    kiv_torles = torles_opciok[valasztott_torles]
-    if st.button("🗑️ Kiválasztott számla törlése"):
-        st.session_state["torles_megerosites_id"] = kiv_torles["id"]
-    if st.session_state.get("torles_megerosites_id") == kiv_torles["id"]:
-        st.warning(f"⚠️ Biztos, hogy törölni kívánja a számlát? (**{kiv_torles['szamlaszam']}**)")
-        tc1, tc2, _ = st.columns((1, 1, 4))
-        if tc1.button("✅ Igen", type="primary"):
-            supabase.table("szamla_tetelek").delete().eq("szamla_id", kiv_torles["id"]).execute()
-            if kiv_torles.get("pdf_utvonal"):
-                supabase.storage.from_("szamlak-pdf").remove(list((kiv_torles["pdf_utvonal"],)))
-            supabase.table("szamlak").delete().eq("id", kiv_torles["id"]).execute()
+    valasztott_torles = st.selectbox("Válaszd ki a törlendő számlát:", list(torles_opciok.keys()), index=None, placeholder="Válassz ki egy számlát a törléshez...", key=f"torles_sel_{kim_ver}")
+    if valasztott_torles:
+        kiv_torles = torles_opciok[valasztott_torles]
+        if st.button("🗑️ Kiválasztott számla törlése"):
+            st.session_state["torles_megerosites_id"] = kiv_torles["id"]
+        if st.session_state.get("torles_megerosites_id") == kiv_torles["id"]:
+            st.warning(f"⚠️ Biztos, hogy törölni kívánja a számlát? (**{kiv_torles['szamlaszam']}**)")
+            tc1, tc2, _ = st.columns((1.2, 1.2, 4))
+            if tc1.button("✅ Igen", type="primary"):
+                supabase.table("szamla_tetelek").delete().eq("szamla_id", kiv_torles["id"]).execute()
