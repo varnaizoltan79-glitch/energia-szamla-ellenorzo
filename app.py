@@ -407,19 +407,9 @@ def szamol_tetelek(df):
 
 def mentes_adatbazisba(uj_szamla, tetelek, fajl, gyujto_marad=False):
     try:
-        alap_szamlaszam = uj_szamla["szamlaszam"]
-        try:
-            res = supabase.table("szamlak").insert(uj_szamla).execute()
-        except Exception as ins_hiba:
-            if "duplicate" in str(ins_hiba).lower() or "23505" in str(ins_hiba):
-                uj_szamla["szamlaszam"] = f"{alap_szamlaszam} (Hely #{uj_szamla['felhasznalasi_hely_id']})"
-                try:
-                    res = supabase.table("szamlak").insert(uj_szamla).execute()
-                except Exception:
-                    st.warning("⚠️ Ez a mérési pont (POD) már rögzítve van ehhez a számlaszámhoz! Válaszd a következő POD-ot a legördülő listából, vagy töröld a korábbit a Kimutatások menüben.")
-                    return
-            else:
-                raise ins_hiba
+        alap_szamlaszam = uj_szamla["szamlaszam"].strip()
+        uj_szamla["szamlaszam"] = alap_szamlaszam
+        res = supabase.table("szamlak").insert(uj_szamla).execute()
 
         sid = next(iter(res.data))["id"]
         for t in tetelek:
@@ -431,12 +421,13 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl, gyujto_marad=False):
             fnev = f"{date.today().year}_{tiszta_szam}.pdf"
             supabase.storage.from_("szamlak-pdf").upload(path=fnev, file=fajl.read(), file_options={"content-type": "application/pdf", "upsert": "true"})
             supabase.table("szamlak").update({"pdf_utvonal": fnev}).eq("id", sid).execute()
-        st.session_state["utolso_mentes"] = f"✅ A POD számlarészlet rögzítése megtörtént (Számlaszám: {uj_szamla['szamlaszam']}, Elszámolási hónap: {uj_szamla['elszamolasi_honap']}, ID: #{sid})"
+        st.session_state["utolso_mentes"] = f"✅ A POD számlarészlet rögzítése megtörtént (Számlaszám: {alap_szamlaszam}, Elszámolási hónap: {uj_szamla['elszamolasi_honap']}, ID: #{sid})"
         if not gyujto_marad:
             urit_urlap()
         st.rerun()
     except Exception as hiba:
         st.error(f"Pontos hiba oka: {hiba}")
+
 
 
 def mutat_helyettesitesek():
