@@ -2,9 +2,9 @@ import base64
 import re
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
+import fitz
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 from pypdf import PdfReader
 from supabase import create_client
 
@@ -25,7 +25,16 @@ if "form_ver" not in st.session_state:
 def urit_urlap():
     st.session_state["form_ver"] += 1
 
-import fitz
+HONAPOK_HU = ("", "január", "február", "március", "április", "május", "június", "július", "augusztus", "szeptember", "október", "november", "december")
+
+def szamol_elszamolasi_honap(ig_datum):
+    ev, ho = ig_datum.year, ig_datum.month
+    if ig_datum.day <= 14:
+        ho -= 1
+        if ho == 0:
+            ho = 12
+            ev -= 1
+    return f"{ev}-{ho:02d} ({ev}. {HONAPOK_HU[ho]})"
 
 @st.dialog("📄 Számla PDF előnézet", width="large")
 def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
@@ -36,7 +45,6 @@ def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
         kep = oldal.get_pixmap(dpi=150)
         st.image(kep.tobytes("png"), caption=f"{idx + 1}. oldal", use_container_width=True)
     st.download_button("📥 PDF letöltése a gépre", data=pdf_bytes, file_name=pdf_utvonal, mime="application/pdf")
-
 
 def feldolgoz_pdf(fajl):
     reader = PdfReader(fajl)
@@ -112,7 +120,7 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl):
             fnev = f"{date.today().year}_{uj_szamla['szamlaszam'].replace('/', '_')}.pdf"
             supabase.storage.from_("szamlak-pdf").upload(path=fnev, file=fajl.read(), file_options={"content-type": "application/pdf", "upsert": "true"})
             supabase.table("szamlak").update({"pdf_utvonal": fnev}).eq("id", sid).execute()
-        st.session_state["utolso_mentes"] = f"✅ Sikeresen megtörtént a számla rögzítése! (Számlaszám: {uj_szamla['szamlaszam']}, ID: #{sid})"
+        st.session_state["utolso_mentes"] = f"✅ Sikeresen megtörtént a számla rögzítése! (Számlaszám: {uj_szamla['szamlaszam']}, Elszámolási hónap: {uj_szamla['elszamolasi_honap']}, ID: #{sid})"
         urit_urlap()
         st.rerun()
     except Exception as hiba:
@@ -135,7 +143,7 @@ if menu == "📊 Kimutatások és Riportok":
         st.stop()
     h_map = {h["id"]: h["megnevezes"] for h in (supabase.table("felhasznalasi_helyek").select("id, megnevezes").execute().data or list())}
     sz_map = {s["id"]: s["nev"] for s in (supabase.table("szolgaltatok").select("id, nev").execute().data or list())}
-    sorok = list({"Számlaszám": s["szamlaszam"], "Felhasználási hely": h_map.get(s["felhasznalasi_hely_id"], ""), "Szolgáltató": sz_map.get(s["szolgaltato_id"], ""), "Időszak kezdete": s["idoszak_tol"], "Időszak vége": s["idoszak_ig"], "Fizetési határidő": s["fizetesi_hatarido"], "Bruttó összeg (Ft)": float(s["szamlan_szereplo_brutto"]), "Státusz": s["ellenorzes_statusz"], "PDF fájl": s["pdf_utvonal"]} for s in lista)
+    sorok = list({"Számlaszám": s["szamlaszam"], "Elszámolási hónap": s.get("elszamolasi_honap") or "", "Felhasználási hely": h_map.get(s["felhasznalasi_hely_id"], ""), "Szolgáltató": sz_map.get(s["szolgaltato_id"], ""), "Időszak kezdete": s["idoszak_tol"], "Időszak vége": s["idoszak_ig"], "Bruttó összeg (Ft)": float(s["szamlan_szereplo_brutto"]), "Státusz": s["ellenorzes_statusz"], "PDF fájl": s["pdf_utvonal"]} for s in lista)
     df = pd.DataFrame(sorok)
     st.bar_chart(df.groupby("Felhasználási hely")["Bruttó összeg (Ft)"].sum())
     st.caption("💡 Kattints egy sor elejére a táblázatban a csatolt PDF számla megnyitásához!")
@@ -208,7 +216,8 @@ kelte = pdf_adat["kelte"] if pdf_adat else date.today()
 hatarido = pdf_adat["hatarido"] if pdf_adat else date.today()
 tol = c3.date_input("Elszámolási időszak kezdete", value=pdf_adat["tol"] if pdf_adat else date.today(), key=f"t_{f_id}")
 ig = c3.date_input("Elszámolási időszak vége", value=pdf_adat["ig"] if pdf_adat else date.today(), key=f"i_{f_id}")
-
+elszamolasi_honap = szamol_elszamolasi_honap(ig)
+c3.info(f"📅 Elszámolási hónap: **{elszamolasi_honap}**")
 
 st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
 alap_df = pd.DataFrame(dict(Megnevezés=["Energiadíj", "Átviteli forgalmi díj", "Elosztói forgalmi díj", "Alapdíj"], Mennyiség=[0.0, 0.0, 0.0, 0.0], Mértékegység=["kWh", "kWh", "kWh", "hó"], Nettó_egységár=[0.0, 0.0, 0.0, 0.0], ÁFA=[27.0, 27.0, 27.0, 27.0]))
@@ -234,5 +243,5 @@ if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha a számít
 gomb = st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary", disabled=not egyezik)
 forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
 stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
-uj_szamla = {"szamlaszam": szamlaszam, "szolgaltato_id": szolg_id, "felhasznalasi_hely_id": hely_id, "forras_tipus": forras, "szamla_kelte": kelte.isoformat(), "fizetesi_hatarido": hatarido.isoformat(), "idoszak_tol": tol.isoformat(), "idoszak_ig": ig.isoformat(), "szamlan_szereplo_brutto": float(brutto_dec), "szamitott_brutto": float(ossz_brutto), "elteres": float(elteres), "ellenorzes_statusz": stat, "jovahagyta_energetikus_id": user_id}
+uj_szamla = {"szamlaszam": szamlaszam, "szolgaltato_id": szolg_id, "felhasznalasi_hely_id": hely_id, "forras_tipus": forras, "szamla_kelte": kelte.isoformat(), "fizetesi_hatarido": hatarido.isoformat(), "idoszak_tol": tol.isoformat(), "idoszak_ig": ig.isoformat(), "elszamolasi_honap": elszamolasi_honap, "szamlan_szereplo_brutto": float(brutto_dec), "szamitott_brutto": float(ossz_brutto), "elteres": float(elteres), "ellenorzes_statusz": stat, "jovahagyta_energetikus_id": user_id}
 if gomb and egyezik: mentes_adatbazisba(uj_szamla, tetelek, fajl)
