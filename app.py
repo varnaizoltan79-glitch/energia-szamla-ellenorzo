@@ -486,12 +486,13 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
 
-    m_az = re.search(r"Felhasználó\s*azonosító\s*száma\s*:?\s*([A-Z0-9]+\s*-\s*[A-Z0-9]+)", rendezett_szoveg, re.I)
-    m_hk = re.search(r"Hőközpont\s*azonosító\s*:?\s*([A-Z0-9-]+)", rendezett_szoveg, re.I)
-    if m_az and not adat["pod"]:
-        adat["pod"] = re.sub(r"\s+", "", m_az.group(1))
-    elif m_hk and not adat["pod"]:
+        m_az = re.search(r"(U\d{5,}\s*-\s*F\d{4,})", szoveg, re.I)
+    m_hk = re.search(r"Hőközpont\s*azonosító\s*:?\s*([A-Z0-9-]+)", szoveg, re.I)
+    if m_az:
+        adat["pod"] = re.sub(r"\s+", "", m_az.group(1)).upper()
+    elif m_hk:
         adat["pod"] = m_hk.group(1).strip()
+
 
     m_ido = re.search(r"(?:Elszámolási|Elszámolt)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–.]+\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
     if m_ido:
