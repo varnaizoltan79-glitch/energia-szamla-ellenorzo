@@ -1096,19 +1096,19 @@ def mutat_rogzitett_szamlak():
 def mutat_kimutatasok():
     st.header("📊 Kimutatások és Riportok")
     szurt_lista, df, osszes_tetel, netto_per_szamla, energia_kwh_per_szamla, h_map, _ = _betolt_szurt_szamlak("kim", mutass_energiatipus=True)
-
     if szurt_lista is None:
         return
 
+    mertekegysegek = set()
+    for val in df["Szumma nettó egységár"].dropna():
+        if "/" in str(val):
+            mertekegysegek.add(str(val).split("/", 1)[1].strip())
+    egyseg_cimke = next(iter(mertekegysegek)) if len(mertekegysegek) == 1 else "egység"
+
     ossz_netto_mind = sum(netto_per_szamla.values())
     ossz_kwh_mind = sum(energia_kwh_per_szamla.values())
-    atlag_egysegar_str = f"{ossz_netto_mind / ossz_kwh_mind:,.2f} Ft/egység".replace(",", " ").replace(".", ",") if ossz_kwh_mind > 0 else "Nincs adat"
+    atlag_egysegar_str = f"{ossz_netto_mind / ossz_kwh_mind:,.2f} Ft/{egyseg_cimke}".replace(",", " ").replace(".", ",") if ossz_kwh_mind > 0 else "Nincs adat"
 
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Számlák száma", f"{len(df)} db")
-    k2.metric("Összesített bruttó költség", ft_szoveg(df["Bruttó összeg (Ft)"].sum()))
-    k3.metric("Átl. szumma nettó egységár", atlag_egysegar_str)
-    k4.metric("Érintett hónapok", f"{df['Elszámolási hónap'].nunique()} hónap")
 
     y_tengely = alt.Axis(format=",.0f", labelExpr="replace(datum.label, /,/g, ' ') + ' Ft'", title="Bruttó összeg (Ft)")
     tab_ho, tab_hely, tab_egysegar, tab_tetel = st.tabs(list(("📅 Havi bontású költségek", "🏭 Telephelyek szerinti összesítés", "📈 Szumma nettó egységár", "⚡ Fogyasztás és Díjtételek")))
@@ -1127,10 +1127,12 @@ def mutat_kimutatasok():
         ea_df = ea_df[ea_df["kWh"] > 0].copy()
         if ea_df.empty:
             st.info("Nincs fogyasztás alapú (kWh vagy m³) díjtétel a kiválasztott számlákban.")
-        else:
-            ea_df["Szumma nettó egységár (Ft/egység)"] = (ea_df["Nettó"] / ea_df["kWh"]).round(2)
+                else:
+            oszlop_nev = f"Szumma nettó egységár (Ft/{egyseg_cimke})"
+            ea_df[oszlop_nev] = (ea_df["Nettó"] / ea_df["kWh"]).round(2)
             ea_sorrend = sorted(list(ea_df["Elszámolási hónap"].unique()), key=honap_kulcs)
-            st.altair_chart(alt.Chart(ea_df).mark_bar().encode(x=alt.X("Elszámolási hónap:N", sort=ea_sorrend, axis=alt.Axis(labelAngle=0, title="Elszámolási hónap")), y=alt.Y("Szumma nettó egységár (Ft/egység):Q", axis=alt.Axis(title="Szumma nettó egységár (Ft/kWh vagy Ft/m³)")), color=alt.Color("Felhasználási hely:N", title="Felhasználási hely"), xOffset="Felhasználási hely:N", tooltip=[alt.Tooltip("Elszámolási hónap:N"), alt.Tooltip("Felhasználási hely:N"), alt.Tooltip("Szumma nettó egységár (Ft/egység):Q", format=",.2f")]).properties(height=360), use_container_width=True)
+            st.altair_chart(alt.Chart(ea_df).mark_bar().encode(x=alt.X("Elszámolási hónap:N", sort=ea_sorrend, axis=alt.Axis(labelAngle=0, title="Elszámolási hónap")), y=alt.Y(f"{oszlop_nev}:Q", axis=alt.Axis(title=oszlop_nev)), color=alt.Color("Felhasználási hely:N", title="Felhasználási hely"), xOffset="Felhasználási hely:N", tooltip=[alt.Tooltip("Elszámolási hónap:N"), alt.Tooltip("Felhasználási hely:N"), alt.Tooltip(f"{oszlop_nev}:Q", format=",.2f")]).properties(height=360), use_container_width=True)
+")), y=alt.Y("Szumma nettó egységár (Ft/egység):Q", axis=alt.Axis(title="Szumma nettó egységár (Ft/kWh vagy Ft/m³)")), color=alt.Color("Felhasználási hely:N", title="Felhasználási hely"), xOffset="Felhasználási hely:N", tooltip=[alt.Tooltip("Elszámolási hónap:N"), alt.Tooltip("Felhasználási hely:N"), alt.Tooltip("Szumma nettó egységár (Ft/egység):Q", format=",.2f")]).properties(height=360), use_container_width=True)
     with tab_tetel:
         szamla_map = {s["id"]: s for s in szurt_lista}
         if not osszes_tetel:
