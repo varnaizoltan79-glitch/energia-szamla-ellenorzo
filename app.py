@@ -106,26 +106,28 @@ def _vizszintes_sorok(oldal):
     szavak = oldal.get_text("words")
     if not szavak:
         return list()
-    szavak.sort(key=lambda w: (round(w[1] / 3.0), w[0]))
+    rendezett = sorted(szavak, key=lambda w: (round(w[1] / 3.0), w[0]))
     sorok = list()
-    akt_y = szavak[0][1]
+    _, akt_y, _, _, _, *_ = rendezett[0]
     akt_szavak = list()
-    for w in szavak:
-        if abs(w[1] - akt_y) <= 3.5:
-            akt_szavak.append(w)
+    for w in rendezett:
+        x0, y0, _, _, szo, *_ = w
+        if abs(y0 - akt_y) <= 3.5:
+            akt_szavak.append((x0, szo))
         else:
-            akt_szavak.sort(key=lambda x: x[0])
-            sorok.append(" ".join(x[4] for x in akt_szavak))
-            akt_y = w[1]
-            akt_szavak = [w]
+            akt_szavak.sort(key=lambda item: item[0])
+            sorok.append(" ".join(item[1] for item in akt_szavak))
+            akt_y = y0
+            akt_szavak = [(x0, szo)]
     if akt_szavak:
-        akt_szavak.sort(key=lambda x: x[0])
-        sorok.append(" ".join(x[4] for x in akt_szavak))
+        akt_szavak.sort(key=lambda item: item[0])
+        sorok.append(" ".join(item[1] for item in akt_szavak))
     return sorok
 
 def _feldolgoz_alteo_pdf(dok, szoveg, adat):
     adat["szolgaltato_kulcs"] = "ALTEO"
-    oldal1_sorok = _vizszintes_sorok(dok)
+    elso_oldal = next(iter(dok))
+    oldal1_sorok = _vizszintes_sorok(elso_oldal)
 
     m_sz_teljes = re.search(r"Számlaszám\s*:?\s*(\d{6,})", szoveg)
     if m_sz_teljes:
@@ -135,13 +137,6 @@ def _feldolgoz_alteo_pdf(dok, szoveg, adat):
         m_sz = re.search(r"Számlaszám[:\s]+(\d{6,})", s)
         if m_sz:
             adat["szamlaszam"] = m_sz.group(1)
-
-
-    for s in oldal1_sorok:
-        m_sz = re.search(r"Számlaszám[:\s]+(\d{6,})", s)
-        if m_sz:
-            adat["szamlaszam"] = m_sz.group(1)
-
         m_ido = re.search(r"Időszak[:\s]+(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", s)
         if m_ido:
             adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
@@ -187,6 +182,7 @@ def _feldolgoz_alteo_pdf(dok, szoveg, adat):
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
+
 
 
 
