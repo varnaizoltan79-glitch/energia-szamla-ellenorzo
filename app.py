@@ -1035,38 +1035,36 @@ def mutat_szamla_rogzites(user_id):
                 tetel_db = len(pdf_adat["tetelek_df"]) if pdf_adat.get("tetelek_df") is not None else 0
                 st.success(f"PDF számla feldolgozva! Számlaszám: **{pdf_adat['szamlaszam']}** ({tetel_db} db díjtétel kinyerve)")
 
-    pod_adatok = (pdf_adat.get("pod_adatok") if pdf_adat else None) or {}
+      pod_adatok = (pdf_adat.get("pod_adatok") if pdf_adat else None) or {}
     gyujto_mod = len(pod_adatok) > 1
     kiv_pod = pdf_adat["pod"] if pdf_adat else ""
     kiv_pod_info = None
+    meglevo_hely_idk = set()
 
     if pod_adatok:
-        foszamla_br = pdf_adat.get("foszamla_brutto", 0) if pdf_adat else 0
-        podok_osszesen = sum(p["brutto"] for p in pod_adatok.values())
-        if len(pod_adatok) > 1 and foszamla_br > 0:
-            gy_elteres = abs(foszamla_br - podok_osszesen)
-            g1, g2, g3 = st.columns(3)
-            g1.metric("Gyűjtőszámla főösszege", ft_szoveg(foszamla_br))
-            g2.metric("POD-ok összesített bruttója", ft_szoveg(podok_osszesen))
-            g3.metric("Gyűjtőszámla eltérés", ft_szoveg(gy_elteres))
-
         hely_pod_nev = {h["pod"]: h["nev"] for h in helyek}
-        meglevo_hely_idk = set()
         if pdf_adat and pdf_adat.get("szamlaszam"):
-            meglevo = supabase.table("szamlak").select("felhasznalasi_hely_id").ilike("szamlaszam", f"{pdf_adat['szamlaszam']}%").execute().data or list()
+            meglevo = supabase.table("szamlak").select("felhasznalasi_hely_id").eq("szamlaszam", pdf_adat["szamlaszam"].strip()).execute().data or list()
             meglevo_hely_idk = set(x["felhasznalasi_hely_id"] for x in meglevo)
         hely_pod_to_id = {h["pod"]: int(h["id"]) for h in helyek}
 
         pod_cimkek = dict()
-        for p_kod, p_info in pod_adatok.items():
+        elso_nem_rogzitett_idx = 0
+        talalt_nem_rogzitett = False
+        for idx_p, (p_kod, p_info) in enumerate(pod_adatok.items()):
             h_nev = hely_pod_nev.get(p_kod, "Nincs a saját telephelyek között")
             hid_check = hely_pod_to_id.get(p_kod)
-            stat_jel = " ✅ [Már rögzítve]" if (hid_check and hid_check in meglevo_hely_idk) else ""
+            mar_kesz = bool(hid_check and hid_check in meglevo_hely_idk)
+            if not mar_kesz and not talalt_nem_rogzitett:
+                elso_nem_rogzitett_idx = idx_p
+                talalt_nem_rogzitett = True
+            stat_jel = " ✅ [Már rögzítve]" if mar_kesz else ""
             pod_cimkek[f"{p_kod} — {h_nev} ({ft_szoveg(p_info['brutto'])}){stat_jel}"] = p_kod
 
-        val_pod_cimke = st.selectbox("📍 Mérési pont (POD) kiválasztása a számlából:", list(pod_cimkek.keys()), key=f"pod_sel_{f_id}")
+        val_pod_cimke = st.selectbox("📍 Mérési pont (POD) kiválasztása a számlából:", list(pod_cimkek.keys()), index=elso_nem_rogzitett_idx, key=f"pod_sel_{f_id}")
         kiv_pod = pod_cimkek[val_pod_cimke]
         kiv_pod_info = pod_adatok[kiv_pod]
+
 
     form_kulcs = f"{f_id}_{kiv_pod}" if kiv_pod else f_id
 
@@ -1136,7 +1134,10 @@ def mutat_szamla_rogzites(user_id):
     forras = "PDF" if pdf_adat else ("TABLAZAT" if fajl else "KEZI")
     stat = "JO" if elteres == Decimal("0") else "KEREKITESI_ELTERES"
     uj_szamla = {"szamlaszam": szamlaszam, "szolgaltato_id": szolg_id, "felhasznalasi_hely_id": hely_id, "forras_tipus": forras, "szamla_kelte": kelte.isoformat(), "fizetesi_hatarido": hatarido.isoformat(), "idoszak_tol": tol.isoformat(), "idoszak_ig": ig.isoformat(), "elszamolasi_honap": elszamolasi_honap, "szamlan_szereplo_brutto": float(brutto_dec), "szamitott_brutto": float(ossz_brutto), "elteres": float(elteres), "ellenorzes_statusz": stat, "jovahagyta_energetikus_id": user_id}
-    if gomb and egyezik: mentes_adatbazisba(uj_szamla, tetelek, mentes_fajl, gyujto_marad=gyujto_mod)
+        minden_pod_kesz = (not gyujto_mod) or (len(meglevo_hely_idk | {hely_id}) >= len(pod_adatok))
+    if gomb and egyezik:
+        mentes_adatbazisba(uj_szamla, tetelek, mentes_fajl, gyujto_marad=not minden_pod_kesz)
+
 
 st.sidebar.title("⚡ Energia Portál")
 users_data = supabase.table("energetikusok").select("id, nev, szerepkor").eq("aktiv", True).order("nev").execute().data or list()
