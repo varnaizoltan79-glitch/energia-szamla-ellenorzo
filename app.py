@@ -443,19 +443,17 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         if not horgonyok:
             continue
 
-        elso_horgony = next(iter(horgonyok))
-        utolso_horgony = next(reversed(horgonyok))
-        elso_y = elso_horgony["y"]
-        utolso_y = utolso_horgony["y"]
-
-        for x0, y0, _, _, szo, *_ in szavak:
-            if x0 > 192.0:
-                continue
-            if not (elso_y - 18.0 <= y0 <= utolso_y + 18.0):
-                continue
-            legkozelebbi = min(horgonyok, key=lambda h: abs(h["y"] - y0))
-            if abs(legkozelebbi["y"] - y0) <= 18.0:
-                legkozelebbi["szavak"].append((round(y0 / 4.0), x0, szo))
+        horgonyok.sort(key=lambda h: h["y"])
+        for idx_h, h in enumerate(horgonyok):
+            felso_hatar = h["y"] - 8.0
+            also_hatar = (horgonyok[idx_h + 1]["y"] - 6.0) if (idx_h + 1 < len(horgonyok)) else (h["y"] + 20.0)
+            for x0, y0, _, _, szo, *_ in szavak:
+                if x0 > 182.0:
+                    continue
+                if re.match(r"^\d{4}\.\d{2}\.\d{2}\.?-?$", szo.strip()):
+                    continue
+                if felso_hatar <= y0 < also_hatar:
+                    h["szavak"].append((round(y0 / 4.0), x0, szo))
 
         for h in horgonyok:
             h["szavak"].sort(key=_rendez_sor_x_szo)
@@ -466,6 +464,7 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
+
 
 
 
