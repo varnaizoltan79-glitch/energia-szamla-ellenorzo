@@ -81,96 +81,88 @@ def _hu_szam(szoveg):
     except ValueError:
         return None
 
-def _beagyazott_xml_bol(xml_bytes):
-    szoveg = xml_bytes.decode("utf-8-sig", errors="replace")
-    gyoker = ET.fromstring(szoveg)
-    for elem in gyoker.iter():
-        if "}" in elem.tag:
-            elem.tag = elem.tag.split("}", 1)[-1]
-    me_map = {"KWH": "kWh", "MWH": "MWh", "CUBIC_METER": "m3", "M3": "m3", "MONTH": "hó", "PIECE": "db", "HOUR": "óra", "DAY": "nap", "MJ": "MJ", "GJ": "GJ"}
-    sorok = list()
-    for el in gyoker.iter():
-        if el.tag.lower() in ("line", "tetel", "invoiceline"):
-            megn = next((c.text.strip() for c in el.iter() if c.tag.lower() in ("linedescription", "description", "megnevezes") and c.text and c.text.strip()), "")
-            q_str = next((c.text.strip() for c in el.iter() if c.tag.lower() in ("quantity", "mennyiseg") and c.text and c.text.strip()), "")
-            p_str = next((c.text.strip() for c in el.iter() if c.tag.lower() in ("unitprice", "unitpricehuf", "egysegar", "nettoegysegar") and c.text and c.text.strip()), "")
-            me_nyers = next((c.text.strip() for c in el.iter() if c.tag.lower() in ("unitofmeasureown", "unitofmeasure", "mertekegyseg") and c.text and c.text.strip()), "")
-            afa_str = next((c.text.strip() for c in el.iter() if c.tag.lower() in ("vatpercentage", "afakulcs", "afa") and c.text and c.text.strip()), "27")
-            if megn and q_str:
-                menny = _hu_szam(q_str)
-                ar = _hu_szam(p_str)
-                afa = _hu_szam(afa_str) or 27.0
-                if 0 < afa <= 1.0:
-                    afa = round(afa * 100, 2)
-                if menny is not None and ar is not None:
-                    me = me_map.get(me_nyers.upper(), me_nyers) if me_nyers else "kWh"
-                    sorok.append({"Megnevezés": megn, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
-    return pd.DataFrame(sorok) if sorok else None
+SZOLGALTATO_SABLONOK = {
+    "ALTEO": {
+        "azonositok": ("alteo energiakereskedő", "17783893"),
+        "szolgaltato_nev_kulcs": "ALTEO",
+        "tetelek": (
+            "Villamos energia díj",
+            "Kedvezményes árú vill. energia támogatás",
+            "Kapcsolt termelésszerk.-átalakítási díj",
+            "Jövedéki adó",
+            "Elosztói forgalmi díj",
+            "Elosztói alapdíj",
+            "Elosztói lekötött teljesítménydíj",
+            "Meddő energia díj",
+            "Átviteli forgalmi díj",
+            "Közbeszerzési díj villamosenergiadíj alapján",
+            "EKR díj",
+            "KÁT pénzeszköz visszatérítés",
+        )
+    }
+}
 
-def _kinyer_pdf_tetelek(szoveg):
-    sorok_lista = list(s.strip() for s in szoveg.splitlines() if s.strip())
-    me_minta = r"(kWh|MWh|m3|m³|hó|db|MJ|GJ|kW|kVArh|nap|óra)"
-    szam_minta = r"-?\d[\d\s\xa0]*(?:[.,]\d+)?"
+def _feldolgoz_alteo_pdf(dok, szoveg, adat):
+    adat["szolgaltato_kulcs"] = "ALTEO"
+    m_sz = re.search(r"Számlaszám[:\s]+(\d{6,})", szoveg)
+    if m_sz:
+        adat["szamlaszam"] = m_sz.group(1).strip()
+    m_ido = re.search(r"Időszak[:\s]+(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", szoveg)
+    if m_ido:
+        adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
+        adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
+    m_br = re.search(r"Fizetendő\s*összeg\s*összesen[:\s]+([\d\.\s\xa0]+,\d{2})\s*Ft|Fizetendő\s*összesen[:\s]+([\d\.\s\xa0]+,\d{2})\s*Ft", szoveg)
+    if m_br:
+        br_nyers = m_br.group(1) or m_br.group(2)
+        br_val = _hu_szam(br_nyers)
+        if br_val:
+            adat["brutto"] = int(round(br_val))
+
+    oldal1_sorok = list(s.strip() for s in (dok[0].get_text("text") or "").splitlines() if s.strip())
+    szam_minta = r"-?\d[\d\.]*,\d+"
+    me_minta = r"(kWh|MWh|csp|kW|kVAhr|db|hó|m3|MJ|GJ)"
+    sor_minta = re.compile(rf"^({szam_minta})\s+{me_minta}\s+({szam_minta})\s*Ft\s+({szam_minta}|-?\d[\d\.]*)\s+(27|5|18|0|AHK)\b")
+
     talalatok = list()
-
-    for idx, sor in enumerate(sorok_lista):
-        if re.search(r"(?:összesen|végösszeg|fizetendő|adóalap|részösszeg)", sor, re.I):
+    for idx, sor in enumerate(oldal1_sorok):
+        m = sor_minta.match(sor)
+        if not m:
             continue
-        m_me = re.search(rf"({szam_minta})\s*{me_minta}\b(.*)$", sor)
-        if not m_me:
-            continue
-        menny = _hu_szam(m_me.group(1))
-        me = m_me.group(2).replace("m³", "m3")
-        maradek = m_me.group(3).strip()
-        eleje = sor[:m_me.start()].strip(" -–:|")
+        menny = _hu_szam(m.group(1))
+        me = m.group(2)
+        ar = _hu_szam(m.group(3))
+        afa_nyers = m.group(5)
+        afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
 
-        if len(eleje) < 3 and idx > 0:
-            elozo = sorok_lista[idx - 1]
-            if not re.search(r"(?:mennyiség|egységár|nettó|bruttó|megnevezés|számla)", elozo, re.I):
-                eleje = f"{elozo} {eleje}".strip()
-        eleje = re.sub(r"^\d+[\.\)]\s*", "", eleje).strip()
-        if len(eleje) < 3:
-            continue
+        nev = oldal1_sorok[idx - 1] if idx > 0 else "Díjtétel"
+        if idx + 1 < len(oldal1_sorok):
+            kov = oldal1_sorok[idx + 1]
+            if not sor_minta.match(kov) and not re.search(r"(?:összesen|Tétel megnevezés|Pénzeszközök|Energia-jövedéki|Rendszerhasználati|Közbeszerzési díjak|EKR díj|Számlaszám)", kov, re.I):
+                nev = f"{nev} {kov}".strip()
 
-        utana_szamok = list(x for x in (_hu_szam(x) for x in re.findall(szam_minta, maradek)) if x is not None)
-        if not utana_szamok and idx + 1 < len(sorok_lista):
-            kov = sorok_lista[idx + 1]
-            if not re.search(me_minta, kov):
-                utana_szamok = list(x for x in (_hu_szam(s) for s in re.findall(szam_minta, kov)) if x is not None)
+        if menny is not None and ar is not None:
+            talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
-        if not utana_szamok or menny is None or menny == 0:
-            continue
+    if talalatok:
+        adat["tetelek_df"] = pd.DataFrame(talalatok)
+    return adat
 
-        afa = 27.0
-        for sz in utana_szamok:
-            if sz in (27.0, 5.0, 18.0, 0.0) and f"{int(sz)}%" in maradek.replace(" ", ""):
-                afa = sz
-                break
-
-        ar = utana_szamok[0]
-        if len(utana_szamok) >= 2:
-            for jelolt_ar in utana_szamok[:-1]:
-                for jelolt_netto in utana_szamok[1:]:
-                    if abs(menny * jelolt_ar - jelolt_netto) <= 2.5:
-                        ar = jelolt_ar
-                        break
-
-        talalatok.append({"Megnevezés": eleje, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
-
-    return pd.DataFrame(talalatok) if talalatok else None
 def feldolgoz_pdf(fajl):
     pdf_bytes = fajl.read()
     dok = fitz.open(stream=pdf_bytes, filetype="pdf")
     szoveg = "\n".join(list(oldal.get_text("text") or "" for oldal in dok))
-    adat = {"szoveg": szoveg.strip(), "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0, "pod": "", "tetelek_df": None}
+    adat = {"szoveg": szoveg.strip(), "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0, "pod": "", "szolgaltato_kulcs": "", "tetelek_df": None}
 
-    for i in range(dok.embfile_count()):
-        info = dok.embfile_info(i)
-        if str(info.get("filename", "")).lower().endswith(".xml"):
-            try:
-                adat["tetelek_df"] = _beagyazott_xml_bol(dok.embfile_get(i))
-            except Exception:
-                pass
+    mk = re.search(r"Számla\s*kelte[:\s]+(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
+    if mk: adat["kelte"] = datetime.strptime(mk.group(1), "%Y.%m.%d").date()
+    mh = re.search(r"Fizetési\s*határidő[:\s]+(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
+    if mh: adat["hatarido"] = datetime.strptime(mh.group(1), "%Y.%m.%d").date()
+    mp = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", szoveg)
+    if mp: adat["pod"] = mp.group(1).strip()
+
+    szoveg_low = szoveg.lower()
+    if any(az in szoveg_low for az in SZOLGALTATO_SABLONOK["ALTEO"]["azonositok"]):
+        return _feldolgoz_alteo_pdf(dok, szoveg, adat)
 
     m = re.search(r"(?:Számla\s*sorszáma|Számlaszám|Bizonylat\s*sorszáma)[:\s]+([A-Za-z0-9/-]{5,})", szoveg, re.I)
     if m: adat["szamlaszam"] = m.group(1).strip()
@@ -179,24 +171,15 @@ def feldolgoz_pdf(fajl):
     if not adat["szamlaszam"] and mf: adat["szamlaszam"] = mf.group(1)
     if not adat["szamlaszam"] and len(alap_nev) >= 5: adat["szamlaszam"] = alap_nev
 
-    mk = re.search(r"Számla\s*kelte[:\s]+(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
-    if mk: adat["kelte"] = datetime.strptime(mk.group(1), "%Y.%m.%d").date()
-    mh = re.search(r"Fizetési\s*határidő[:\s]+(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
-    if mh: adat["hatarido"] = datetime.strptime(mh.group(1), "%Y.%m.%d").date()
     mi = re.search(r"(?:Elszámolt|Teljesítési|Elszámolási)\s*időszak[:\s]+(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
     if mi:
         adat["tol"] = datetime.strptime(mi.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(mi.group(2), "%Y.%m.%d").date()
-    mb = re.search(r"(?:Fizetendő\s*összeg|Számla\s*végösszege|Bruttó\s*végösszeg)[:\s]+([\d\.\s\xa0]+)\s*Ft", szoveg, re.I)
+    mb = re.search(r"(?:Fizetendő\s*összeg|Fizetendő\s*összesen|Számla\s*végösszege)[:\s]+([\d\.\s\xa0]+(?:,\d+)?)\s*Ft", szoveg, re.I)
     if mb:
         br_val = _hu_szam(mb.group(1))
         if br_val:
             adat["brutto"] = int(round(br_val))
-    mp = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", szoveg)
-    if mp: adat["pod"] = mp.group(1).strip()
-
-    if adat["tetelek_df"] is None and szoveg.strip():
-        adat["tetelek_df"] = _kinyer_pdf_tetelek(szoveg)
     return adat
 
 def get_helyek(uid):
