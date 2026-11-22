@@ -97,22 +97,22 @@ def _vizszintes_sorok(oldal):
     szavak = oldal.get_text("words")
     if not szavak:
         return list()
-    rendezett = sorted(szavak, key=lambda w: (round(w / 3.0), w))
+    rendezett = sorted(szavak, key=lambda w: (round(w[1] / 3.0), w[0]))
     sorok = list()
-    akt_y = rendezett
+    _, akt_y, *_ = next(iter(rendezett))
     akt_szavak = list()
     for w in rendezett:
         x0, y0, _, _, szo = w[:5]
         if abs(y0 - akt_y) <= 3.5:
             akt_szavak.append((x0, szo))
         else:
-            akt_szavak.sort(key=lambda item: item)
-            sorok.append(" ".join(item for item in akt_szavak))
+            akt_szavak.sort(key=lambda item: item[0])
+            sorok.append(" ".join(s for _, s in akt_szavak))
             akt_y = y0
             akt_szavak = [(x0, szo)]
     if akt_szavak:
-        akt_szavak.sort(key=lambda item: item)
-        sorok.append(" ".join(item for item in akt_szavak))
+        akt_szavak.sort(key=lambda item: item[0])
+        sorok.append(" ".join(s for _, s in akt_szavak))
     return sorok
 
 def _feldolgoz_alteo_pdf(dok, szoveg, adat):
@@ -218,17 +218,14 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         if len(szamok) < 3:
             continue
 
+        elso_szam, masodik_szam, *_ = szamok
         netto_ellenorzes = szamok[-1]
         if "közbeszerzési" in nev.lower():
-            alap_ertek = szamok
-            szazalek = szamok
-            if abs((alap_ertek * szazalek / 100.0) - netto_ellenorzes) <= 2.5:
+            if abs((elso_szam * masodik_szam / 100.0) - netto_ellenorzes) <= 2.5:
                 talalatok.append({"Megnevezés": nev, "Mennyiség": 1.0, "Mértékegység": "db", "Nettó egységár": netto_ellenorzes, "ÁFA (%)": 27.0})
         else:
-            menny = szamok
-            ar = szamok
-            if abs((menny * ar) - netto_ellenorzes) <= 2.5:
-                talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": akt_me, "Nettó egységár": ar, "ÁFA (%)": akt_afa})
+            if abs((elso_szam * masodik_szam) - netto_ellenorzes) <= 2.5:
+                talalatok.append({"Megnevezés": nev, "Mennyiség": elso_szam, "Mértékegység": akt_me, "Nettó egységár": masodik_szam, "ÁFA (%)": akt_afa})
 
     tetelek_df = pd.DataFrame(talalatok) if talalatok else None
     pod_brutto = 0
@@ -275,7 +272,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
 
     kezdo_indexek = list(i for i, s in enumerate(osszes_sor) if "TELEPHELYI RÉSZLETEZŐ" in s.upper())
     if not kezdo_indexek:
-        kezdo_indexek =
+        kezdo_indexek = list((0,))
 
     osszevont_blokkok = list()
     for idx, start_i in enumerate(kezdo_indexek):
@@ -302,6 +299,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
         adat["ig"] = pod_adatok[elso_pod]["ig"]
         adat["tetelek_df"] = pod_adatok[elso_pod]["tetelek_df"]
     return adat
+
 
 
 def feldolgoz_pdf(fajl):
