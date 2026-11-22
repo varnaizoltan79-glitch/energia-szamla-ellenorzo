@@ -623,7 +623,9 @@ def szamol_tetelek(df):
             continue
         menny = Decimal(str(m_val))
         ar = Decimal(str(a_val))
-        if menny == 0 and ar == 0:
+        if (menny == 0 and ar == 0) or (str(row.get("Megnevezés") or "").strip() == "Bruttó díj kompenzáció" and ar == 0):
+         continue
+
             continue
         afa_val = row.get("ÁFA (%)")
         afa = Decimal(str(afa_val)) if (afa_val is not None and not pd.isna(afa_val)) else Decimal("27.0")
