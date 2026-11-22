@@ -25,6 +25,10 @@ if "form_ver" not in st.session_state:
 def urit_urlap():
     st.session_state["form_ver"] += 1
 
+def formaz_ezres(kulcs):
+    nyers = re.sub(r"\D", "", st.session_state.get(kulcs, ""))
+    st.session_state[kulcs] = f"{int(nyers):,}".replace(",", " ") if nyers else ""
+
 HONAPOK_HU = ("", "január", "február", "március", "április", "május", "június", "július", "augusztus", "szeptember", "október", "november", "december")
 
 def szamol_elszamolasi_honap(ig_datum):
@@ -50,7 +54,7 @@ def feldolgoz_pdf(fajl):
     reader = PdfReader(fajl)
     oldalak = list(p.extract_text() or "" for p in reader.pages)
     szoveg = "\n".join(oldalak)
-    adat = {"szoveg": szoveg.strip(), "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0.0, "pod": ""}
+    adat = {"szoveg": szoveg.strip(), "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0, "pod": ""}
     m = re.search(r"(?:Számla\s*sorszáma|Számlaszám|Bizonylat\s*sorszáma)[:\s]+([A-Za-z0-9/-]{5,})", szoveg, re.I)
     if m: adat["szamlaszam"] = m.group(1).strip()
     alap_nev = next(iter(fajl.name.rsplit(".", 1)))
@@ -66,7 +70,7 @@ def feldolgoz_pdf(fajl):
         adat["tol"] = datetime.strptime(mi.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(mi.group(2), "%Y.%m.%d").date()
     mb = re.search(r"(?:Fizetendő\s*összeg|Számla\s*végösszege)[:\s]+([\d\.\s]+)\s*Ft", szoveg, re.I)
-    if mb: adat["brutto"] = float(mb.group(1).replace(".", "").replace(" ", "").replace(",", "."))
+    if mb: adat["brutto"] = int(round(float(mb.group(1).replace(".", "").replace(" ", "").replace(",", "."))))
     mp = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", szoveg)
     if mp: adat["pod"] = mp.group(1).strip()
     return adat
@@ -170,7 +174,7 @@ if menu == "📊 Kimutatások és Riportok":
 
     k1, k2, k3 = st.columns(3)
     k1.metric("Számlák száma", f"{len(df)} db")
-    k2.metric("Összesített bruttó költség", f"{df['Bruttó összeg (Ft)'].sum():,.0f} Ft")
+    k2.metric("Összesített bruttó költség", f"{df['Bruttó összeg (Ft)'].sum():,.0f} Ft".replace(",", " "))
     k3.metric("Érintett hónapok", f"{df['Elszámolási hónap'].nunique()} hónap")
 
     tab_ho, tab_hely = st.tabs(list(("📅 Havi bontású költségek", "🏭 Telephelyek szerinti összesítés")))
@@ -246,7 +250,12 @@ szolg_data = supabase.table("szolgaltatok").select("id, nev").order("nev").execu
 szolg_opciok = {s["nev"]: int(s["id"]) for s in szolg_data}
 v_szolg = c2.selectbox("Szolgáltató", list(szolg_opciok.keys()), key=f"szolg_{f_id}")
 szolg_id = szolg_opciok[v_szolg]
-szamlan_brutto = c2.number_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=pdf_adat["brutto"] if pdf_adat else 0.0, step=1.0, format="%.2f", key=f"br_{f_id}")
+
+br_kulcs = f"br_{f_id}"
+alap_br_szoveg = f"{int(pdf_adat['brutto']):,}".replace(",", " ") if (pdf_adat and pdf_adat["brutto"] > 0) else ""
+szamlan_brutto_str = c2.text_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=alap_br_szoveg, placeholder="pl. 6 648", key=br_kulcs, on_change=formaz_ezres, args=(br_kulcs,))
+br_szamjegyek = re.sub(r"\D", "", szamlan_brutto_str)
+szamlan_brutto = int(br_szamjegyek) if br_szamjegyek else 0
 
 kelte = pdf_adat["kelte"] if pdf_adat else date.today()
 hatarido = pdf_adat["hatarido"] if pdf_adat else date.today()
@@ -267,15 +276,15 @@ if fajl and fajl.name.lower().endswith(".csv"): alap_df = pd.read_csv(fajl)
 szerk_df = st.data_editor(alap_df, num_rows="dynamic", use_container_width=True, key=f"ed_{f_id}")
 ossz_netto, ossz_brutto, tetelek = szamol_tetelek(szerk_df)
 
-brutto_dec = Decimal(str(szamlan_brutto)).quantize(Decimal("0.01"))
+brutto_dec = Decimal(szamlan_brutto)
 elteres = abs(brutto_dec - ossz_brutto)
 
 m1, m2, m3 = st.columns(3)
-m1.metric("Számított Nettó", f"{ossz_netto:,.0f} Ft")
-m2.metric("Számított Bruttó", f"{ossz_brutto:,.0f} Ft")
-m3.metric("Eltérés a számlától", f"{elteres:,.2f} Ft")
+m1.metric("Számított Nettó", f"{ossz_netto:,.0f} Ft".replace(",", " "))
+m2.metric("Számított Bruttó", f"{ossz_brutto:,.0f} Ft".replace(",", " "))
+m3.metric("Eltérés a számlától", f"{elteres:,.0f} Ft".replace(",", " "))
 
-egyezik = (elteres <= Decimal("2.00")) and (len(tetelek) > 0) and (szamlan_brutto > 0) and datum_rendben
+egyezik = (elteres <= Decimal("2")) and (len(tetelek) > 0) and (szamlan_brutto > 0) and datum_rendben
 if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
 if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha az összegek egyeznek és a dátumok helyesek.")
 
