@@ -627,7 +627,7 @@ def mutat_torzsadatok():
 
     t_hely, t_user, t_szolg = st.tabs(list(("🏭 Felhasználási helyek", "👤 Energetikusok", "🏢 Szolgáltatók")))
 
-        with t_hely:
+    with t_hely:
         if osszes_hely:
             st.caption("💡 Kattints duplán a cellákra a **Megnevezés**, **Energiatípus**, **POD / EIC**, **Felelős**, **Állandó helyettes** vagy **Aktív** mezők módosításához!")
             nev_to_id = {"Nincs kijelölve": None}
@@ -730,6 +730,7 @@ def mutat_torzsadatok():
                         st.session_state.pop("h_torles_megerosites_id", None)
                         st.session_state["hely_torles_ver"] = h_ver + 1
                         st.rerun()
+
 
 
     with t_user:
