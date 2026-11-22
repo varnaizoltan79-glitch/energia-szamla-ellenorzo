@@ -880,29 +880,32 @@ def mutat_rogzitett_szamlak():
     st.download_button("📥 Rögzített számlák letöltése Excelbe (CSV)", data=csv, file_name=f"rogzitett_szamlak_{date.today()}.csv", mime="text/csv")
 
     st.divider()
-    st.subheader("🗑️ Számla törlése")
+    st.subheader("🗑️ Számlák törlése")
     torles_opciok = {f"#{s['id']} – {s['szamlaszam']} ({tiszta_honap(s.get('elszamolasi_honap'))}, {h_map.get(s['felhasznalasi_hely_id'], '')}, {ft_szoveg(s['szamlan_szereplo_brutto'])})": s for s in szurt_lista}
-    valasztott_torles = st.selectbox("Válaszd ki a törlendő számlát:", list(torles_opciok.keys()), index=None, placeholder="Válassz ki egy számlát a törléshez...", key=f"torles_sel_{rogz_ver}")
-    if valasztott_torles:
-        kiv_torles = torles_opciok[valasztott_torles]
-        if st.button("🗑️ Kiválasztott számla törlése"):
-            st.session_state["torles_megerosites_id"] = kiv_torles["id"]
-        if st.session_state.get("torles_megerosites_id") == kiv_torles["id"]:
-            st.warning(f"⚠️ Biztos, hogy törölni kívánja a számlát? (**{kiv_torles['szamlaszam']}**)")
+    valasztott_torlesek = st.multiselect("Válaszd ki a törlendő számlákat (több is kijelölhető):", list(torles_opciok.keys()), placeholder="Válassz ki egy vagy több számlát a törléshez...", key=f"torles_multi_{rogz_ver}")
+    if valasztott_torlesek:
+        kiv_lista = list(torles_opciok[nev] for nev in valasztott_torlesek)
+        kiv_idk = list(int(s["id"]) for s in kiv_lista)
+        if st.button(f"🗑️ Kijelölt számlák törlése ({len(kiv_lista)} db)"):
+            st.session_state["torles_megerosites_idk"] = kiv_idk
+        if st.session_state.get("torles_megerosites_idk") == kiv_idk:
+            szamok_szoveg = ", ".join(s["szamlaszam"] for s in kiv_lista)
+            st.warning(f"⚠️ Biztos, hogy véglegesen törölni kívánja a kijelölt **{len(kiv_lista)} db** számlát? (**{szamok_szoveg}**)")
             tc1, tc2, _ = st.columns((1.2, 1.2, 4))
             if tc1.button("✅ Igen", type="primary"):
-                supabase.table("szamla_tetelek").delete().eq("szamla_id", kiv_torles["id"]).execute()
-                if kiv_torles.get("pdf_utvonal"):
-                    kozos_e = supabase.table("szamlak").select("id").eq("pdf_utvonal", kiv_torles["pdf_utvonal"]).neq("id", kiv_torles["id"]).execute().data or list()
-                    if not kozos_e:
-                        supabase.storage.from_("szamlak-pdf").remove(list((kiv_torles["pdf_utvonal"],)))
-                supabase.table("szamlak").delete().eq("id", kiv_torles["id"]).execute()
-                st.session_state.pop("torles_megerosites_id", None)
+                supabase.table("szamla_tetelek").delete().in_("szamla_id", kiv_idk).execute()
+                supabase.table("szamlak").delete().in_("id", kiv_idk).execute()
+                erintett_pdfek = set(s["pdf_utvonal"] for s in kiv_lista if s.get("pdf_utvonal"))
+                for pdf_ut in erintett_pdfek:
+                    maradt_e = supabase.table("szamlak").select("id").eq("pdf_utvonal", pdf_ut).execute().data or list()
+                    if not maradt_e:
+                        supabase.storage.from_("szamlak-pdf").remove(list((pdf_ut,)))
+                st.session_state.pop("torles_megerosites_idk", None)
                 st.session_state["rogzitett_ver"] = rogz_ver + 1
-                st.success(f"✅ A(z) {kiv_torles['szamlaszam']} számú számla sikeresen törölve lett!")
+                st.success(f"✅ {len(kiv_lista)} db számla sikeresen törölve lett!")
                 st.rerun()
             if tc2.button("❌ Nem"):
-                st.session_state.pop("torles_megerosites_id", None)
+                st.session_state.pop("torles_megerosites_idk", None)
                 st.session_state["rogzitett_ver"] = rogz_ver + 1
                 st.rerun()
 
