@@ -1,6 +1,5 @@
 import base64
 import re
-import xml.etree.ElementTree as ET
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 import altair as alt
@@ -65,6 +64,7 @@ def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
         kep = oldal.get_pixmap(dpi=150)
         st.image(kep.tobytes("png"), caption=f"{idx + 1}. oldal", use_container_width=True)
     st.download_button("📥 PDF letöltése a gépre", data=pdf_bytes, file_name=pdf_utvonal, mime="application/pdf")
+
 def _hu_szam(szoveg):
     if not szoveg:
         return None
@@ -111,14 +111,14 @@ def _feldolgoz_alteo_pdf(dok, szoveg, adat):
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
-    m_br = re.search(r"Fizetendő\s*összeg\s*összesen[:\s]+([\d\.\s\xa0]+,\d{2})\s*Ft|Fizetendő\s*összesen[:\s]+([\d\.\s\xa0]+,\d{2})\s*Ft", szoveg)
+    m_br = re.search(r"Fizetendő\s*összesen[:\s]+([\d\.\s\xa0]+,\d{2})\s*Ft|Összesen[:\s]+[\d\.\s\xa0]+,\d{2}\s+[\d\.\s\xa0]+,\d{2}\s+([\d\.\s\xa0]+,\d{2})", szoveg)
     if m_br:
         br_nyers = m_br.group(1) or m_br.group(2)
         br_val = _hu_szam(br_nyers)
         if br_val:
             adat["brutto"] = int(round(br_val))
 
-    oldal1_sorok = list(s.strip() for s in (dok[0].get_text("text") or "").splitlines() if s.strip())
+    oldal1_sorok = list(s.strip() for s in (dok.get_text("text") or "").splitlines() if s.strip())
     szam_minta = r"-?\d[\d\.]*,\d+"
     me_minta = r"(kWh|MWh|csp|kW|kVAhr|db|hó|m3|MJ|GJ)"
     sor_minta = re.compile(rf"^({szam_minta})\s+{me_minta}\s+({szam_minta})\s*Ft\s+({szam_minta}|-?\d[\d\.]*)\s+(27|5|18|0|AHK)\b")
@@ -236,6 +236,7 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl):
         st.rerun()
     except Exception as hiba:
         st.error(f"Pontos hiba oka: {hiba}")
+
 def mutat_torzsadatok():
     st.header("⚙️ Törzsadatok és Helyettesítések kezelése")
     osszes_user = supabase.table("energetikusok").select("*").order("nev").execute().data or list()
@@ -287,6 +288,7 @@ def mutat_torzsadatok():
             if st.form_submit_button("💾 Felhasználási hely mentése", type="primary") and uj_h_nev.strip() and uj_h_pod.strip():
                 supabase.table("felhasznalasi_helyek").insert({"megnevezes": uj_h_nev.strip(), "energiatipus": uj_h_energia, "pod_eic_azonosito": uj_h_pod.strip(), "felelos_energetikus_id": fel_opc[uj_h_fel], "allando_helyettes_id": fel_opc[uj_h_helyett], "aktiv": True}).execute()
                 st.rerun()
+
     with t_user:
         if osszes_user:
             st.dataframe(pd.DataFrame(list({"ID": u["id"], "Név": u["nev"], "Szerepkör": u["szerepkor"], "Státusz": "Aktív" if u.get("aktiv") else "Inaktív"} for u in osszes_user)), use_container_width=True, hide_index=True)
@@ -389,6 +391,7 @@ def mutat_torzsadatok():
                         st.rerun()
                     else:
                         st.info("Nem történt változás a kiosztásban.")
+
 def mutat_kimutatasok():
     st.header("Rögzített számlák és havi kimutatások")
     lista = supabase.table("szamlak").select("*").order("jovahagyas_ideje", desc=True).execute().data or list()
@@ -428,7 +431,7 @@ def mutat_kimutatasok():
         netto_per_szamla[sid] = netto_per_szamla.get(sid, 0.0) + float(t.get("szamitott_netto") or 0.0)
         megn = str(t.get("megnevezes_eredeti") or "").strip().lower()
         me = str(t.get("mertekegyseg") or "").strip().lower()
-        if "energiadíj" in megn and me == "kwh":
+        if ("energiadíj" in megn or "energia díj" in megn) and me == "kwh":
             energia_kwh_per_szamla[sid] = energia_kwh_per_szamla.get(sid, 0.0) + float(t.get("mennyiseg") or 0.0)
 
     sorok = list()
@@ -565,7 +568,8 @@ def mutat_szamla_rogzites(user_id):
 
     szolg_data = supabase.table("szolgaltatok").select("id, nev").order("nev").execute().data or list()
     szolg_opciok = {s["nev"]: int(s["id"]) for s in szolg_data}
-    v_szolg = c2.selectbox("Szolgáltató", list(szolg_opciok.keys()), key=f"szolg_{f_id}")
+    szolg_idx = next((i for i, nev in enumerate(szolg_opciok.keys()) if pdf_adat and pdf_adat.get("szolgaltato_kulcs") and pdf_adat["szolgaltato_kulcs"].lower() in nev.lower()), 0)
+    v_szolg = c2.selectbox("Szolgáltató", list(szolg_opciok.keys()), index=szolg_idx, key=f"szolg_{f_id}")
     szolg_id = szolg_opciok[v_szolg]
 
     br_kulcs = f"br_{f_id}"
