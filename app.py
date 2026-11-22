@@ -1121,7 +1121,7 @@ def mutat_szamla_rogzites(user_id):
     elif fajl and fajl.name.lower().endswith(".csv"):
         alap_df = pd.read_csv(fajl)
 
-        def _frissit_tetel_osszegek(df_be):
+    def _frissit_tetel_osszegek(df_be):
         df_ki = df_be.copy()
         nettos = list()
         bruttos = list()
