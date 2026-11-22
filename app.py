@@ -528,10 +528,10 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
                 adat["brutto"] = int(round(br_val))
                 break
 
-    egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?"
+    egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?"
     me_minta = r"(kW|MW|GJ|db|lm3|m3|m³|kWh|MWh|hó)"
-    menny_me_re = re.compile(rf"({egyes_szam})\s*{me_minta}\b")
-    ar_re = re.compile(rf"({egyes_szam})\s*Ft")
+    ido_oszlop_minta = r"(?:\d{4}\.\d{2}\.\d{2}\s*[-–]?\s*\d{4}\.\d{2}\.\d{2}|\d{4}\.\d{2}\s*hó|\d{4}\.\d{2})"
+    tetel_minta = re.compile(rf"^(.+?)\s+{ido_oszlop_minta}\s+({egyes_szam})\s+({egyes_szam})\s*{me_minta}\s*({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?\s+({egyes_szam})(?:\s+(27|5|18|0|AHK)\b)?")
 
     talalatok = list()
     for oldal in dok:
@@ -543,105 +543,61 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
         if not szavak:
             continue
 
-        x_nev_max = min((x0 for x0, y0, _, _, szo, *_ in szavak if "fogyasztási" in szo.lower() and 150.0 < y0 < 400.0), default=145.0) - 4.0
-        x_szorzo_min = min((x0 for x0, y0, _, _, szo, *_ in szavak if "szorzó" in szo.lower() and 150.0 < y0 < 400.0), default=215.0) - 6.0
-        x_menny_min = min((x0 for x0, y0, _, _, szo, *_ in szavak if "mennyisége" in szo.lower() and 150.0 < y0 < 400.0), default=250.0) - 8.0
-        x_ar_min = min((x0 for x0, y0, _, _, szo, *_ in szavak if "egységára" in szo.lower() and 150.0 < y0 < 400.0), default=325.0) - 8.0
-        x_netto_min = min((x0 for x0, y0, _, _, szo, *_ in szavak if szo.lower() == "díj" and x0 > 380.0 and 150.0 < y0 < 400.0), default=415.0) - 12.0
-        x_afa_min = min((x0 for x0, y0, _, _, szo, *_ in szavak if "áfa" in szo.lower() and x0 > 450.0 and 150.0 < y0 < 400.0), default=475.0) - 8.0
-        x_brutto_min = min((x0 for x0, y0, _, _, szo, *_ in szavak if "bruttó" in szo.lower() and x0 > 490.0 and 150.0 < y0 < 400.0), default=505.0) - 8.0
-
-        sorok_y = list()
-        rendezett = sorted(szavak, key=lambda w: (round(w / 3.0), w))
+        rendezett = sorted(szavak, key=lambda w: (round(w[1] / 6.0), w[0]))
         _, akt_y, *_ = next(iter(rendezett))
         akt_szavak = list()
+        tablazat_sorok = list()
         for x0, y0, _, _, szo, *_ in rendezett:
-            if abs(y0 - akt_y) <= 3.5:
+            if x0 > 555.0:
+                continue
+            if abs(y0 - akt_y) <= 7.0:
                 akt_szavak.append((x0, szo))
             else:
                 akt_szavak.sort(key=_rendez_x_szo)
-                sorok_y.append((akt_y, " ".join(sszo for _, sszo in akt_szavak)))
+                tablazat_sorok.append(" ".join(ss for _, ss in akt_szavak))
                 akt_y = y0
                 akt_szavak = [(x0, szo)]
         if akt_szavak:
             akt_szavak.sort(key=_rendez_x_szo)
-            sorok_y.append((akt_y, " ".join(sszo for _, sszo in akt_szavak)))
+            tablazat_sorok.append(" ".join(ss for _, ss in akt_szavak))
 
-        kategoria_pontok = list()
-        y_vege = 9999.0
-        for y_val, sor_sz in sorok_y:
-            s_low = sor_sz.lower()
+        kategoria = ""
+        for s in tablazat_sorok:
+            s_low = s.lower()
             if "fűtési célú költségek" in s_low:
-                kategoria_pontok.append((y_val, "Fűtési célú - "))
+                kategoria = "Fűtési célú - "
+                continue
             elif "vízfelmelegítési célú költségek" in s_low:
-                kategoria_pontok.append((y_val, "Vízfelmelegítési - "))
+                kategoria = "Vízfelmelegítési - "
+                continue
             elif "viziközmű-szolgáltatási díjak" in s_low or "víziközmű-szolgáltatási díjak" in s_low:
-                kategoria_pontok.append((y_val, "Víziközmű - "))
-            elif ("bruttó számlaérték" in s_low or "számla áfa összesítője" in s_low or "hőközponti és épület" in s_low) and y_val < y_vege:
-                y_vege = y_val
-
-        menny_szavak = list((x0, y0, szo) for x0, y0, _, _, szo, *_ in szavak if x_menny_min <= x0 < x_ar_min and y0 < y_vege)
-        if not menny_szavak:
-            continue
-
-        menny_sorok = list()
-        menny_rend = sorted(menny_szavak, key=_rendez_yx_szo)
-        _, m_akt_y, _ = next(iter(menny_rend))
-        m_akt = list()
-        for x0, y0, szo in menny_rend:
-            if abs(y0 - m_akt_y) <= 4.5:
-                m_akt.append((x0, szo))
-            else:
-                m_akt.sort(key=_rendez_x_szo)
-                menny_sorok.append((m_akt_y, " ".join(ss for _, ss in m_akt)))
-                m_akt_y = y0
-                m_akt = [(x0, szo)]
-        if m_akt:
-            m_akt.sort(key=_rendez_x_szo)
-            menny_sorok.append((m_akt_y, " ".join(ss for _, ss in m_akt)))
-
-        for y_row, m_szoveg in menny_sorok:
-            mm = menny_me_re.search(m_szoveg)
-            if not mm:
+                kategoria = "Víziközmű - "
                 continue
-            menny_alap = _hu_szam(mm.group(1))
-            me = mm.group(2).replace("m³", "m3")
-            if menny_alap is None:
+            elif "bruttó számlaérték" in s_low or "számla áfa összesítője" in s_low or "hőközponti és épület" in s_low:
+                break
+
+            if s_low.startswith("fizetendő ") or "összesen" in s_low:
                 continue
 
-            aktiv_kat = ""
-            for ky, k_nev in kategoria_pontok:
-                if ky < y_row:
-                    aktiv_kat = k_nev
-
-            bal_sz = list((round(y0 / 4.0), x0, szo) for x0, y0, _, _, szo, *_ in szavak if x0 <= x_nev_max and abs(y0 - y_row) <= 9.0)
-            bal_sz.sort(key=_rendez_sor_x_szo)
-            nev_nyers = " ".join(s for _, _, s in bal_sz).strip()
-            if not nev_nyers or "összesen" in nev_nyers.lower() or "fizetendő" in nev_nyers.lower() or "tétel" in nev_nyers.lower():
+            m = tetel_minta.search(s)
+            if not m:
                 continue
 
-            szorzo_sz = list((x0, szo) for x0, y0, _, _, szo, *_ in szavak if x_szorzo_min <= x0 < x_menny_min and abs(y0 - y_row) <= 7.0)
-            szorzo_sz.sort(key=_rendez_x_szo)
-            szorzo = _hu_szam(" ".join(s for _, s in szorzo_sz)) or 1.0
+            nev = f"{kategoria}{m.group(1).strip()}".strip()
+            szorzo = _hu_szam(m.group(2)) or 1.0
+            menny = (_hu_szam(m.group(3)) or 0.0) * szorzo
+            me = m.group(4).replace("m³", "m3")
+            ar = _hu_szam(m.group(5))
+            netto_oszlop = _hu_szam(m.group(6))
+            afa_nyers = m.group(7)
+            afa = 5.0 if not afa_nyers else (0.0 if afa_nyers == "AHK" else float(afa_nyers))
 
-            ar_sz = list((x0, szo) for x0, y0, _, _, szo, *_ in szavak if x_ar_min <= x0 < x_netto_min and abs(y0 - y_row) <= 7.0)
-            ar_sz.sort(key=_rendez_x_szo)
-            ar_szoveg = " ".join(s for _, s in ar_sz)
-            am = ar_re.search(ar_szoveg)
-            ar = _hu_szam(am.group(1)) if am else _hu_szam(re.sub(r"Ft.*", "", ar_szoveg))
-
-            afa_sz = list((x0, szo) for x0, y0, _, _, szo, *_ in szavak if x_afa_min <= x0 < x_brutto_min and abs(y0 - y_row) <= 7.0)
-            afa_sz.sort(key=_rendez_x_szo)
-            afa_szoveg = " ".join(s for _, s in afa_sz).strip()
-            if afa_szoveg in ("27", "5", "18", "0"):
-                afa = float(afa_szoveg)
-            elif afa_szoveg == "AHK":
-                afa = 0.0
-            else:
-                afa = 27.0 if "víziközmű" in aktiv_kat.lower() else 5.0
+            if ar is not None and netto_oszlop is not None and menny > 0:
+                if abs((menny * ar) - netto_oszlop) > 5.0:
+                    ar = round(netto_oszlop / menny, 4)
 
             if ar is not None:
-                talalatok.append({"Megnevezés": f"{aktiv_kat}{nev_nyers}".strip(), "Mennyiség": round(menny_alap * szorzo, 4), "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
+                talalatok.append({"Megnevezés": nev, "Mennyiség": round(menny, 4), "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
