@@ -125,11 +125,17 @@ def _vizszintes_sorok(oldal):
 
 def _feldolgoz_alteo_pdf(dok, szoveg, adat):
     adat["szolgaltato_kulcs"] = "ALTEO"
-    oldal1_sorok = _vizszintes_sorok(dok[0])
+    oldal1_sorok = _vizszintes_sorok(dok)
 
-        m_sz_teljes = re.search(r"Számlaszám\s*:?\s*(\d{6,})", szoveg)
+    m_sz_teljes = re.search(r"Számlaszám\s*:?\s*(\d{6,})", szoveg)
     if m_sz_teljes:
         adat["szamlaszam"] = m_sz_teljes.group(1)
+
+    for s in oldal1_sorok:
+        m_sz = re.search(r"Számlaszám[:\s]+(\d{6,})", s)
+        if m_sz:
+            adat["szamlaszam"] = m_sz.group(1)
+
 
     for s in oldal1_sorok:
         m_sz = re.search(r"Számlaszám[:\s]+(\d{6,})", s)
