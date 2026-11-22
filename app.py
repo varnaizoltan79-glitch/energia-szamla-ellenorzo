@@ -184,20 +184,6 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         pod_tol = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         pod_ig = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
 
-    pod_brutto = 0
-    afa_bontasban = False
-    for s in sorok:
-        if "áfa szerinti bontás" in s.lower():
-            afa_bontasban = True
-        elif afa_bontasban and s.lower().startswith("összesen"):
-            szamok_raw = re.findall(r"-?\d{1,3}(?:[\s\xa0]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?", s)
-            szamok = list(x for x in (_hu_szam(r) for r in szamok_raw) if x is not None)
-            if szamok:
-                pod_brutto = int(round(szamok[-1]))
-            break
-    if pod_brutto == 0:
-        pod_brutto = alap_brutto
-
     akt_afa = 27.0
     akt_me = "kWh"
     talalatok = list()
@@ -239,7 +225,26 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
             ar = szamok[1]
             talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": akt_me, "Nettó egységár": ar, "ÁFA (%)": akt_afa})
 
-    return pod, {"pod": pod, "brutto": pod_brutto, "tol": pod_tol, "ig": pod_ig, "tetelek_df": pd.DataFrame(talalatok) if talalatok else None}
+    tetelek_df = pd.DataFrame(talalatok) if talalatok else None
+    pod_brutto = 0
+    afa_bontasban = False
+    for s in sorok:
+        if "áfa szerinti bontás" in s.lower():
+            afa_bontasban = True
+        elif afa_bontasban and s.lower().startswith("összesen"):
+            szamok_raw = re.findall(r"-?\d{1,3}(?:[\s\xa0]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?", s)
+            szamok = list(x for x in (_hu_szam(r) for r in szamok_raw) if x is not None)
+            if szamok:
+                pod_brutto = int(round(szamok[-1]))
+            break
+
+    if pod_brutto == 0 and tetelek_df is not None:
+        _, szam_brutto, _ = szamol_tetelek(tetelek_df)
+        pod_brutto = int(round(float(szam_brutto)))
+    elif pod_brutto == 0:
+        pod_brutto = alap_brutto
+
+    return pod, {"pod": pod, "brutto": pod_brutto, "tol": pod_tol, "ig": pod_ig, "tetelek_df": tetelek_df}
 
 def _feldolgoz_mvm_pdf(dok, szoveg, adat):
     adat["szolgaltato_kulcs"] = "MVM"
@@ -257,6 +262,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
         br_val = _hu_szam(m_br.group(1))
         if br_val:
             adat["brutto"] = int(round(br_val))
+            adat["foszamla_brutto"] = int(round(br_val))
 
     osszes_sor = list()
     for oldal in dok:
@@ -282,6 +288,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
         adat["ig"] = pod_adatok[elso_pod]["ig"]
         adat["tetelek_df"] = pod_adatok[elso_pod]["tetelek_df"]
     return adat
+
 
 def feldolgoz_pdf(fajl):
     pdf_bytes = fajl.read()
