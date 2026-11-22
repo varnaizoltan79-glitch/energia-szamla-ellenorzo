@@ -881,11 +881,32 @@ def mutat_rogzitett_szamlak():
 
     st.divider()
     st.subheader("🗑️ Számlák törlése")
-    torles_opciok = {f"#{s['id']} – {s['szamlaszam']} ({tiszta_honap(s.get('elszamolasi_honap'))}, {h_map.get(s['felhasznalasi_hely_id'], '')}, {ft_szoveg(s['szamlan_szereplo_brutto'])})": s for s in szurt_lista}
-    valasztott_torlesek = st.multiselect("Válaszd ki a törlendő számlákat (több is kijelölhető):", list(torles_opciok.keys()), placeholder="Válassz ki egy vagy több számlát a törléshez...", key=f"torles_multi_{rogz_ver}")
-    if valasztott_torlesek:
-        kiv_lista = list(torles_opciok[nev] for nev in valasztott_torlesek)
-        kiv_idk = list(int(s["id"]) for s in kiv_lista)
+    st.caption("☑️ Pipáld be a törölni kívánt számlák előtti jelölőnégyzetet!")
+
+    torles_sorok = list({
+        "Törlés": False,
+        "ID": int(s["id"]),
+        "Számlaszám": s["szamlaszam"],
+        "Elszámolási hónap": tiszta_honap(s.get("elszamolasi_honap")),
+        "Felhasználási hely": h_map.get(s["felhasznalasi_hely_id"], ""),
+        "Bruttó összeg (Ft)": int(round(float(s["szamlan_szereplo_brutto"])))
+    } for s in szurt_lista)
+
+    szerk_torles = st.data_editor(
+        pd.DataFrame(torles_sorok),
+        use_container_width=True,
+        hide_index=True,
+        disabled=list(("ID", "Számlaszám", "Elszámolási hónap", "Felhasználási hely", "Bruttó összeg (Ft)")),
+        column_config={
+            "Törlés": st.column_config.CheckboxColumn("Törlés", default=False)
+        },
+        key=f"torles_chk_ed_{rogz_ver}"
+    )
+
+    kiv_torles_df = szerk_torles[szerk_torles["Törlés"] == True]
+    if not kiv_torles_df.empty:
+        kiv_idk = list(int(x) for x in kiv_torles_df["ID"])
+        kiv_lista = list(s for s in szurt_lista if int(s["id"]) in set(kiv_idk))
         if st.button(f"🗑️ Kijelölt számlák törlése ({len(kiv_lista)} db)"):
             st.session_state["torles_megerosites_idk"] = kiv_idk
         if st.session_state.get("torles_megerosites_idk") == kiv_idk:
