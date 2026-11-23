@@ -370,14 +370,15 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
     szoveg_low = szoveg.lower()
     if "tiszamenti" in szoveg_low or "11265832" in szoveg_low or "trvzrt" in szoveg_low:
         adat["szolgaltato_kulcs"] = "tiszamenti"
-    elif "érv" in szoveg_low or "11069186" in szoveg_low or "ervzrt" in szoveg_low:
+    elif "érv. zrt" in szoveg_low or "érv zrt" in szoveg_low or "északmagyarországi regionális" in szoveg_low or "11069186" in szoveg_low or "ervzrt" in szoveg_low:
         adat["szolgaltato_kulcs"] = "érv"
     elif "nyírségvíz" in szoveg_low or "11492809" in szoveg_low or "nyirsegviz" in szoveg_low:
         adat["szolgaltato_kulcs"] = "nyírségvíz"
-    elif "drv" in szoveg_low or "dunántúli regionális" in szoveg_low or "11226002" in szoveg_low:
+    elif "drv zrt" in szoveg_low or "dunántúli regionális" in szoveg_low or "11226002" in szoveg_low or "drv.hu" in szoveg_low:
         adat["szolgaltato_kulcs"] = "drv"
     else:
         adat["szolgaltato_kulcs"] = "debreceni vízmű"
+
 
     m_sz = re.search(r"Számla\s*sorszáma\s*:?\s*([A-Z0-9/-]{6,})", szoveg, re.I)
     if m_sz:
