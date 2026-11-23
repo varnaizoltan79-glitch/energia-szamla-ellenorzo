@@ -1696,7 +1696,7 @@ def mutat_rogzitett_szamlak():
         if kiv_szamla_id and szamla_obj:
             szamla_tetelek = [t for t in osszes_tetel if int(t["szamla_id"]) == kiv_szamla_id]
             st.subheader(f"📋 Számla díjtételei ({szamla_obj.get('szamlaszam', '')})")
-            if szamla_tetelek:
+        if szamla_tetelek:
             t_megj = [
                 {
                     "Megnevezés": t.get("megnevezes_eredeti", ""),
