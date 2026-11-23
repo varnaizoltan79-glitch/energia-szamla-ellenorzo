@@ -76,7 +76,7 @@ def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
 def _hu_szam(szoveg):
     if not szoveg:
         return None
-    tiszta = szoveg.replace("\xa0", " ").strip()
+    tiszta = szoveg.replace("\xa0", " ").replace("\u2212", "-").replace("–", "-").strip()
     tiszta = re.sub(r"^-\s+", "-", tiszta)
     tiszta = re.sub(r"(?<=\d)\s+(?=\d)", "", tiszta)
     if "," in tiszta and "." in tiszta:
