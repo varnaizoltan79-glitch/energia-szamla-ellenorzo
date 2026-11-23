@@ -204,49 +204,78 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
     pod = m_pod.group(1).strip() if m_pod else ""
 
     pod_tol, pod_ig = alap_tol, alap_ig
-    m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", blokk_szoveg)
+    m_ido = re.search(r"Elszámolt\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", blokk_szoveg, re.I)
     if m_ido:
         pod_tol = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         pod_ig = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
 
-    akt_afa = 27.0
     szam_minta = r"-?\d{1,3}(?:[ .]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
-    me_minta = r"(kWh|MWh|kW|kVAhr|db|hó|m3|m³|MJ|GJ|csp)"
-    tetel_minta = re.compile(rf"^(.+?)\s+({szam_minta})\s+{me_minta}\s+({szam_minta})\s*(?:Ft(?:/[A-Za-z0-9³]+)?)?\s+({szam_minta})(?:\s+(27|5|18|0|AHK)\b)?")
-    kizaro = ("összesen", "részösszeg", "fizetendő", "számlaérték", "tétel megnevezése", "elszámolt mennyiség", "nettó egységár", "áfatartalom", "bruttó érték", "pod", "mérési pont")
+    sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s*[-–]\s*(\d{{4}}\.\d{{2}}\.\d{{2}})\s+({szam_minta})\s+({szam_minta})(?:\s+(KIF\d+|KÖF|NAF|A\d+|B\d+))?\s+({szam_minta})\s*$")
+    kizaro_eleje = ("összesen", "kereskedelmi díjak", "pénzeszközök", "közvetített szolgáltatás", "megnevezés", "áfa szerinti bontás", "mérő gyári", "mért időszak", "szerződésszám", "mérési pont", "fogyasztási hely", "telephelyre vonatkozó", "oldalak száma")
 
+    akt_me = "kWh"
+    akt_afa = 27.0
     talalatok = list()
     pod_brutto = 0
-    for s in sorok:
-        s_low = s.lower()
-        m_afa = re.search(r"(\d{1,2})\s*%\s*-?\s*os\s*áfa", s_low)
-        if m_afa:
-            akt_afa = float(m_afa.group(1))
+
+    for idx, s in enumerate(sorok):
+        s_low = s.lower().strip()
+        if "kereskedelmi díjak" in s_low:
+            akt_me = "kWh"
+            akt_afa = 27.0
+            continue
+        elif "pénzeszközök" in s_low or "adóalapon kívüli" in s_low:
+            akt_me = "kWh"
+            akt_afa = 0.0
+            continue
+        elif "mennyiség (kvarh)" in s_low:
+            akt_me = "kVArh"
+            akt_afa = 27.0
+            continue
+        elif "mennyiség (csatl" in s_low or "csatl.pont/db" in s_low:
+            akt_me = "db"
+            akt_afa = 27.0
+            continue
+        elif "mennyiség (kw)" in s_low:
+            akt_me = "kW"
+            akt_afa = 27.0
+            continue
+        elif "ellenérték alap" in s_low and "mérték" in s_low:
+            akt_me = "%"
+            akt_afa = 27.0
+            continue
+        elif "mennyiség (kwh)" in s_low:
+            akt_me = "kWh"
+            akt_afa = 27.0
             continue
 
-        m_pbr = re.search(r"(?:felhasználási\s*hely\s*összesen|mérési\s*pont\s*összesen|bruttó\s*összesen)\s*:?\s*([\d\.\s\xa0]+(?:,\d+)?)\s*Ft", s_low)
-        if m_pbr:
-            val_b = _hu_szam(m_pbr.group(1))
-            if val_b:
-                pod_brutto = int(round(val_b))
+        if s_low.startswith("összesen") and idx > 0:
+            kornyezet = " ".join(sorok[max(0, idx - 4):idx]).lower()
+            if "áfa szerinti bontás" in kornyezet or "adóval növelt" in kornyezet:
+                szamok = re.findall(r"\d{1,3}(?: \d{3})+|\d+", s)
+                if szamok:
+                    val_b = _hu_szam(szamok[-1])
+                    if val_b and val_b > 0:
+                        pod_brutto = int(round(val_b))
             continue
 
-        if any(kz in s_low for kz in kizaro):
+        if any(s_low.startswith(kz) for kz in kizaro_eleje):
             continue
 
-        m = tetel_minta.match(s)
+        m = sor_re.match(s.strip())
         if not m:
             continue
 
         nev = m.group(1).strip(" -–:|")
-        menny = _hu_szam(m.group(2))
-        me = m.group(3).replace("m³", "m3")
-        ar = _hu_szam(m.group(4))
-        afa_nyers = m.group(6)
-        afa = akt_afa if not afa_nyers else (0.0 if afa_nyers == "AHK" else float(afa_nyers))
+        menny = _hu_szam(m.group(4))
+        ar = _hu_szam(m.group(5))
+        if menny is None or ar is None:
+            continue
 
-        if menny is not None and ar is not None:
-            talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
+        if akt_me == "%":
+            ar = round(ar / 100.0, 6)
+
+        talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": akt_me, "Nettó egységár": ar, "ÁFA (%)": akt_afa})
 
     tetelek_df = pd.DataFrame(talalatok) if talalatok else None
     if pod_brutto == 0 and tetelek_df is not None:
@@ -255,6 +284,7 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
 
     return {"pod": pod, "tol": pod_tol, "ig": pod_ig, "brutto": pod_brutto, "tetelek_df": tetelek_df}
 
+
 def _feldolgoz_mvm_pdf(dok, szoveg, adat):
     adat["szolgaltato_kulcs"] = "MVM"
     osszes_sor = list()
@@ -262,11 +292,13 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
         osszes_sor.extend(_vizszintes_sorok(oldal))
     rendezett_szoveg = "\n".join(osszes_sor)
 
-    m_sz = re.search(r"(?:Számla\s*sorszáma|Számlaszám)\s*:?\s*([A-Z0-9/-]{6,})", rendezett_szoveg, re.I)
+    m_sz = re.search(r"Számla\s*száma\s*:?\s*([A-Z0-9/-]{6,})", rendezett_szoveg, re.I)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
 
-    m_ido = re.search(r"(?:Elszámolási|Elszámolt|Teljesítési)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
+    m_ido = re.search(r"Áramdíj\s*és\s*egyéb\s*díjak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
+    if not m_ido:
+        m_ido = re.search(r"(?:Elszámolási|Elszámolt|Teljesítési)\s*időszak(?:ok)?\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
@@ -279,7 +311,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
     if m_h:
         adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
 
-    m_br = re.search(r"(?:Fizetendő\s*összeg|Fizetendő\s*összesen|Bruttó\s*számlaérték)\s*:?\s*([\d\.\s\xa0]+(?:,\d+)?)\s*Ft", rendezett_szoveg, re.I)
+    m_br = re.search(r"Fizetendő\s*:?\s*([\d\.\s\xa0]+(?:,\d+)?)\s*Ft", rendezett_szoveg, re.I)
     if m_br:
         br_val = _hu_szam(m_br.group(1))
         if br_val:
@@ -316,6 +348,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
             adat["brutto"] = resz["brutto"]
 
     return adat
+
 
 
 
