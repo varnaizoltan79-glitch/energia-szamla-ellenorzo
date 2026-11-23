@@ -210,8 +210,8 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         pod_ig = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
 
     szam_minta = r"-?\d{1,3}(?:[ .]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
-    me_kar = r"[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű0-9/³]+"
-    sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+({szam_minta})\s+({me_kar})\s+(?:({szam_minta})\s+(HUF/{me_kar}|%)|({me_kar})\s+({szam_minta}))\s+({szam_minta})\s+(\d{{1,2}})\s*$")
+    me_kar = r"(?:m3|[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű/³]+)"
+    sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+({szam_minta})\s*({me_kar})\s*(?:({szam_minta})\s*(HUF/{me_kar}|%)|({me_kar})\s*({szam_minta}))\s+({szam_minta})\s+(\d{{1,2}})\s*$")
 
     talalatok = list()
     for s in sorok:
