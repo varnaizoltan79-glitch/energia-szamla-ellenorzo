@@ -211,7 +211,7 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
 
     szam_minta = r"-?\d{1,3}(?:[ .]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
     me_kar = r"(?:m3|[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű/³]+)"
-    sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+({szam_minta})\s*({me_kar})\s*(?:({szam_minta})\s*(HUF/{me_kar}|%)|({me_kar})\s*({szam_minta}))\s+({szam_minta})\s+(\d{{1,2}})\s*$")
+    sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s*(\d{{4}}\.\d{{2}}\.\d{{2}})\s*({szam_minta})\s*({me_kar})\s*(?:({szam_minta})\s*(HUF/{me_kar}|%)|({me_kar})\s*({szam_minta}))\s*({szam_minta})\s+(\d{{1,2}})\s*$")
 
     talalatok = list()
     for s in sorok:
