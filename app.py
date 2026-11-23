@@ -210,16 +210,17 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         pod_ig = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
 
     szam_minta = r"-?\d{1,3}(?:[ .]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
-    sor_re = re.compile(rf"(?:^(.+?)\s+)?(\d{{4}}\.\d{{2}}\.\d{{2}})\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+({szam_minta})\s*(kWh/h|kWh|m3|m³|MJ|GJ|HUF|Ft|db|hó)\s*(.+?)\s+({szam_minta})\s+(\d{{1,2}})\s*$")
+    sor_re = re.compile(rf"(?:^(.+?)\s+)?(\d{{4}}\.\d{{2}}\.\d{{2}})\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+({szam_minta})\s*(kWh/h|kWh|m3|m³|MJ|GJ|HUF|Ft|db|hó)\s+(.+?)\s+({szam_minta})\s+(\d{{1,2}})\b")
 
     talalatok = list()
     elozo_nev = ""
     for s in sorok:
-        s_tisztitott = re.sub(r"(?<=[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű%/])(?=-?\d)", " ", s.strip())
+        s_tisztitott = re.sub(r"kWh\s*/\s*h", "KWHPERH", s.strip())
+        s_tisztitott = re.sub(r"(?<=[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű%])(?=-?\d)", " ", s_tisztitott)
         s_tisztitott = re.sub(r"(?<=\d)(?=[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű%])", " ", s_tisztitott)
+        s_tisztitott = s_tisztitott.replace("KWHPERH", "kWh/h")
         s_tisztitott = re.sub(r"\bm\s+3\b", "m3", s_tisztitott)
-        s_tisztitott = re.sub(r"kWh\s*/\s*h", "kWh/h", s_tisztitott)
-        m = sor_re.match(s_tisztitott)
+        m = sor_re.search(s_tisztitott)
         if not m:
             if not re.search(r"\d", s_tisztitott) and 4 <= len(s_tisztitott) <= 60 and "összesen" not in s_tisztitott.lower() and "díjtétel" not in s_tisztitott.lower():
                 elozo_nev = s_tisztitott.strip(" -–:|")
@@ -256,6 +257,7 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         pod_brutto = int(szam_br)
 
     return {"pod": pod, "tol": pod_tol, "ig": pod_ig, "brutto": pod_brutto, "tetelek_df": tetelek_df}
+
 
 
 
