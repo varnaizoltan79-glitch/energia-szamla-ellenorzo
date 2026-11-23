@@ -234,8 +234,18 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         afa = float(m.group(8))
 
         kozep_szamok = re.findall(szam_minta, kozepso)
-        ar = _hu_szam(kozep_szamok[0]) if kozep_szamok else None
+        ar = _hu_szam(next(iter(kozep_szamok))) if kozep_szamok else None
 
+        if menny is None or ar is None:
+            continue
+
+        if "%" in kozepso or me_nyers in ("HUF", "Ft"):
+            me = "%"
+            ar = round(ar / 100.0, 6)
+        else:
+            me = me_nyers.replace("m³", "m3")
+            if netto_oszlop is not None and menny != 0 and abs((menny * ar) - netto_oszlop) > 5.0:
+                ar = round(netto_oszlop / menny, 6)
 
         talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
@@ -246,6 +256,7 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         pod_brutto = int(szam_br)
 
     return {"pod": pod, "tol": pod_tol, "ig": pod_ig, "brutto": pod_brutto, "tetelek_df": tetelek_df}
+
 
 
 def _feldolgoz_mvm_gaz_pdf(dok, szoveg, adat):
