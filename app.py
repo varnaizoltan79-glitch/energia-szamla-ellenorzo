@@ -67,7 +67,7 @@ st.markdown(
     """
     <style>
     div[data-testid="stDialog"] > div > div {
-        width: 950px !important;
+        width: 800px !important;
         max-width: 92vw !important;
     }
     </style>
