@@ -66,7 +66,7 @@ def honap_kulcs(cimke):
 @st.dialog("📄 Számla PDF előnézet")
 def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
     st.markdown(
-        "<style>div[data-testid='stDialog'] div[role='dialog'] { width: 1500px !important; max-width: 90vw !important; }</style>",
+        "<style>div[data-testid='stDialog'] div[role='dialog'] { width: 900px !important; max-width: 100vw !important; }</style>",
         unsafe_allow_html=True
     )
     st.subheader(f"Számlaszám: {szamlaszam}")
