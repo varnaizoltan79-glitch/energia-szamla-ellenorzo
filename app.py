@@ -1622,6 +1622,7 @@ def mutat_rogzitett_szamlak():
             height=450,
             key="rogzitett_szamlak_aggrid"
         )
+
         sel = getattr(grid_valasz, "selected_rows", None)
         if sel is None and isinstance(grid_valasz, dict):
             sel = grid_valasz.get("selected_rows")
@@ -1655,8 +1656,7 @@ def mutat_rogzitett_szamlak():
         elso_idx = next(iter(kiv_sorok), None)
         if elso_idx is not None and elso_idx < len(df):
             kiv_szamla_id = int(df.iloc[elso_idx]["ID"])
-
-            szamla_map_id = {int(s["id"]): s for s in szurt_lista}
+    szamla_map_id = {int(s["id"]): s for s in szurt_lista}
     if not kiv_szamla_id and szurt_lista:
         kiv_szamla_id = int(next(iter(szurt_lista))["id"])
 
@@ -1664,39 +1664,6 @@ def mutat_rogzitett_szamlak():
     pdf_ut = (szamla_obj.get("pdf_utvonal") or szamla_obj.get("pdf_fajlnev")) if szamla_obj else None
 
     with akcio_hely:
-        if szamla_obj:
-            c_info, c_pdf, c_torol = st.columns((3.2, 1.3, 1.3))
-            c_info.markdown(f"**🧾 Kijelölt számla:** `{szamla_obj.get('szamlaszam', '')}` — {h_map.get(szamla_obj.get('felhasznalasi_hely_id'), '')} ({ft_szoveg(szamla_obj.get('szamlan_szereplo_brutto') or 0)})")
-            if pdf_ut:
-                if c_pdf.button("📄 PDF nagy ablakban", type="primary", use_container_width=True, key=f"pdf_btn_{kiv_szamla_id}"):
-                    mutat_pdf_ablak(pdf_ut, szamla_obj.get("szamlaszam", ""))
-            else:
-                c_pdf.caption("Nincs csatolt PDF")
-
-            if c_torol.button("🗑️ Számla törlése", use_container_width=True, key=f"del_btn_{kiv_szamla_id}"):
-                st.session_state["torles_megerosites_id"] = kiv_szamla_id
-
-            if st.session_state.get("torles_megerosites_id") == kiv_szamla_id:
-                st.warning(f"⚠️ Biztosan törölni szeretnéd a(z) **{szamla_obj.get('szamlaszam', '')}** számlát és minden díjtételét?")
-                tc1, tc2, _ = st.columns((1.3, 1.2, 4))
-                if tc1.button("✅ Igen, végleges törlés", type="primary", key=f"del_yes_{kiv_szamla_id}"):
-                    supabase.table("szamla_tetelek").delete().eq("szamla_id", kiv_szamla_id).execute()
-                    supabase.table("szamlak").delete().eq("id", kiv_szamla_id).execute()
-                    if pdf_ut:
-                        try:
-                            supabase.storage.from_("szamlak-pdf").remove(list((pdf_ut,)))
-                        except Exception:
-                            pass
-                    st.session_state.pop("torles_megerosites_id", None)
-                    st.success("✅ Számla sikeresen törölve!")
-                    st.rerun()
-                if tc2.button("❌ Mégse", key=f"del_no_{kiv_szamla_id}"):
-                    st.session_state.pop("torles_megerosites_id", None)
-                    st.rerun()
-
-    if kiv_szamla_id and szamla_obj:
-
-        pdf_ut = (szamla_obj.get("pdf_utvonal") or szamla_obj.get("pdf_fajlnev")) if szamla_obj else None
         if szamla_obj:
             c_info, c_pdf, c_torol = st.columns((3.2, 1.3, 1.3))
             c_info.markdown(f"**🧾 Kijelölt számla:** `{szamla_obj.get('szamlaszam', '')}` — {h_map.get(szamla_obj.get('felhasznalasi_hely_id'), '')} ({ft_szoveg(szamla_obj.get('szamlan_szereplo_brutto') or 0)})")
@@ -1761,6 +1728,7 @@ def mutat_rogzitett_szamlak():
                     st.warning(f"A PDF előnézet nem tölthető be: {e}")
             else:
                 st.info("Ehhez a számlához nincs feltöltött PDF fájl.")
+
 
 
 
