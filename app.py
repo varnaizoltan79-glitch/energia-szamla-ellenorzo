@@ -1549,10 +1549,17 @@ def mutat_rogzitett_szamlak():
         "PDF fájl": ""
     }
 
+    aggrid_aktiv = False
     kiv_szamla_id = None
     try:
         from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
+        aggrid_aktiv = True
+    except ImportError:
+        aggrid_aktiv = False
 
+    akcio_hely = st.container()
+
+    if aggrid_aktiv:
         gb = GridOptionsBuilder.from_dataframe(df)
         gb.configure_default_column(
             filter=True,
@@ -1563,13 +1570,13 @@ def mutat_rogzitett_szamlak():
             filterParams={"buttons": ["reset", "apply"], "closeOnApply": True}
         )
         gb.configure_column("ID", hide=True)
-        gb.configure_column("Számlaszám", checkboxSelection=True, headerCheckboxSelection=False, minWidth=155)
+        gb.configure_column("Számlaszám", checkboxSelection=True, headerCheckboxSelection=False, minWidth=160)
         gb.configure_column(
             "Bruttó összeg (Ft)",
             type=["numericColumn"],
             valueFormatter=JsCode("function(params) { return params.value != null ? Number(params.value).toLocaleString('hu-HU') + ' Ft' : ''; }")
         )
-        gb.configure_selection(selection_mode="single", use_checkbox=False)
+        gb.configure_selection(selection_mode="single", use_checkbox=True)
 
         frissit_osszesen_js = JsCode("""
         function(params) {
@@ -1608,13 +1615,16 @@ def mutat_rogzitett_szamlak():
             df,
             gridOptions=gb.build(),
             update_mode=GridUpdateMode.SELECTION_CHANGED,
+            update_on=["selectionChanged"],
             allow_unsafe_jscode=True,
             fit_columns_on_grid_load=False,
-            height=460,
+            height=450,
             key="rogzitett_szamlak_aggrid"
         )
+        sel = getattr(grid_valasz, "selected_rows", None)
+        if sel is None and isinstance(grid_valasz, dict):
+            sel = grid_valasz.get("selected_rows")
 
-        sel = grid_valasz.get("selected_rows")
         if isinstance(sel, pd.DataFrame) and not sel.empty:
             rekord = next(iter(sel.to_dict(orient="records")))
             if int(rekord.get("ID") or -1) > 0:
@@ -1623,8 +1633,7 @@ def mutat_rogzitett_szamlak():
             rekord = next(iter(sel))
             if isinstance(rekord, dict) and int(rekord.get("ID") or -1) > 0:
                 kiv_szamla_id = int(rekord["ID"])
-
-    except ImportError:
+    else:
         df_megjelenit = pd.concat([df, pd.DataFrame([osszesen_sor])], ignore_index=True)
 
         def _szinez_utolso(sor):
@@ -1646,20 +1655,23 @@ def mutat_rogzitett_szamlak():
         if elso_idx is not None and elso_idx < len(df):
             kiv_szamla_id = int(df.iloc[elso_idx]["ID"])
 
-    if kiv_szamla_id:
-        szamla_obj = next((s for s in szurt_lista if int(s["id"]) == kiv_szamla_id), None)
+    with akcio_hely:
+        szamla_map_id = {int(s["id"]): s for s in szurt_lista}
+        if not kiv_szamla_id and szurt_lista:
+            kiv_szamla_id = int(next(iter(szurt_lista))["id"])
+
+        szamla_obj = szamla_map_id.get(kiv_szamla_id)
         if szamla_obj:
-            st.divider()
-            c_info, c_pdf, c_torol = st.columns((3, 1.3, 1.3))
-            c_info.subheader(f"🧾 Kiválasztott számla: {szamla_obj.get('szamlaszam', '')}")
+            c_info, c_pdf, c_torol = st.columns((3.2, 1.3, 1.3))
+            c_info.markdown(f"**🧾 Kijelölt számla:** `{szamla_obj.get('szamlaszam', '')}` — {h_map.get(szamla_obj.get('felhasznalasi_hely_id'), '')} ({ft_szoveg(szamla_obj.get('szamlan_szereplo_brutto') or 0)})")
             pdf_ut = szamla_obj.get("pdf_fajlnev")
             if pdf_ut:
-                if c_pdf.button("📄 PDF számla megnyitása", type="primary", key=f"pdf_btn_{kiv_szamla_id}"):
+                if c_pdf.button("📄 PDF megnyitása", type="primary", use_container_width=True, key=f"pdf_btn_{kiv_szamla_id}"):
                     mutat_pdf_ablak(pdf_ut, szamla_obj.get("szamlaszam", ""))
             else:
                 c_pdf.caption("Nincs csatolt PDF")
 
-            if c_torol.button("🗑️ Számla törlése", key=f"del_btn_{kiv_szamla_id}"):
+            if c_torol.button("🗑️ Számla törlése", use_container_width=True, key=f"del_btn_{kiv_szamla_id}"):
                 st.session_state["torles_megerosites_id"] = kiv_szamla_id
 
             if st.session_state.get("torles_megerosites_id") == kiv_szamla_id:
@@ -1680,21 +1692,24 @@ def mutat_rogzitett_szamlak():
                     st.session_state.pop("torles_megerosites_id", None)
                     st.rerun()
 
-            szamla_tetelek = [t for t in osszes_tetel if int(t["szamla_id"]) == kiv_szamla_id]
-            if szamla_tetelek:
-                t_megj = [
-                    {
-                        "Megnevezés": t.get("megnevezes_eredeti", ""),
-                        "Mennyiség": float(t.get("mennyiseg") or 0),
-                        "Mértékegység": t.get("mertekegyseg", ""),
-                        "Nettó egységár (Ft)": float(t.get("egysegar_netto") or 0),
-                        "Nettó összeg (Ft)": int(round(float(t.get("szamitott_netto") or 0))),
-                        "ÁFA (%)": float(t.get("afa_kulcs") or 0),
-                        "Bruttó összeg (Ft)": int(round(float(t.get("szamitott_brutto") or 0)))
-                    }
-                    for t in szamla_tetelek
-                ]
-                st.dataframe(pd.DataFrame(t_megj), use_container_width=True, hide_index=True)
+    if kiv_szamla_id:
+        szamla_tetelek = [t for t in osszes_tetel if int(t["szamla_id"]) == kiv_szamla_id]
+        if szamla_tetelek:
+            st.subheader(f"📋 Számla díjtételei ({szamla_map_id.get(kiv_szamla_id, {}).get('szamlaszam', '')})")
+            t_megj = [
+                {
+                    "Megnevezés": t.get("megnevezes_eredeti", ""),
+                    "Mennyiség": float(t.get("mennyiseg") or 0),
+                    "Mértékegység": t.get("mertekegyseg", ""),
+                    "Nettó egységár (Ft)": float(t.get("egysegar_netto") or 0),
+                    "Nettó összeg (Ft)": int(round(float(t.get("szamitott_netto") or 0))),
+                    "ÁFA (%)": float(t.get("afa_kulcs") or 0),
+                    "Bruttó összeg (Ft)": int(round(float(t.get("szamitott_brutto") or 0)))
+                }
+                for t in szamla_tetelek
+            ]
+            st.dataframe(pd.DataFrame(t_megj), use_container_width=True, hide_index=True)
+
 
 
 
