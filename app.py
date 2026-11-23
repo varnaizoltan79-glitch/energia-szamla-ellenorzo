@@ -1486,8 +1486,9 @@ def mutat_szamla_rogzites(user_id):
     elif fajl and fajl.name.lower().endswith(".csv"):
         alap_df = pd.read_csv(fajl)
 
-        komp_sor = pd.DataFrame([{"Megnevezés": "Bruttó díj kompenzáció", "Mennyiség": None, "Mértékegység": "Ft", "Nettó egységár": None, "ÁFA (%)": None}])
+    komp_sor = pd.DataFrame([{"Megnevezés": "Bruttó díj kompenzáció", "Mennyiség": None, "Mértékegység": "Ft", "Nettó egységár": None, "ÁFA (%)": None}])
     alap_df = pd.concat([alap_df, komp_sor], ignore_index=True)
+
 
     def _frissit_tetel_osszegek(df_be):
         df_ki = df_be.copy()
