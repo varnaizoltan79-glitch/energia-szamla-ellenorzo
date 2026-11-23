@@ -66,7 +66,7 @@ def honap_kulcs(cimke):
 @st.dialog("📄 Számla PDF előnézet")
 def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
     st.markdown(
-        "<style>div[data-testid='stDialog'] div[role='dialog'] { width: 660px !important; max-width: 85vw !important; }</style>",
+        "<style>div[data-testid='stDialog'] div[role='dialog'] { width: 900px !important; max-width: 90vw !important; }</style>",
         unsafe_allow_html=True
     )
     st.subheader(f"Számlaszám: {szamlaszam}")
@@ -76,6 +76,7 @@ def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
         kep = oldal.get_pixmap(dpi=130)
         st.image(kep.tobytes("png"), caption=f"{idx + 1}. oldal", use_container_width=True)
     st.download_button("📥 PDF letöltése a gépre", data=pdf_bytes, file_name=pdf_utvonal, mime="application/pdf")
+
 
 
 
