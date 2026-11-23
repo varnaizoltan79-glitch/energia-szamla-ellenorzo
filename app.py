@@ -193,7 +193,7 @@ def _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat):
             adat["brutto"] = int(round(br_val))
 
 
-    szam_minta = r"-?\d[\d\.]*,\d+"
+        szam_minta = r"-?\d[\d\.]*,\d+"
     egesz_vagy_tizedes = r"-?\d[\d\.]*(?:,\d+)?"
     me_minta = r"(kWh|MWh|csp|kW|kVAhr|db|hó|m3|MJ|GJ)"
     tetel_minta = re.compile(rf"^(.+?)\s+({szam_minta})\s+{me_minta}\s+({szam_minta})\s*Ft\s+({egesz_vagy_tizedes})\s+(27|5|18|0|AHK)\b")
@@ -215,10 +215,32 @@ def _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat):
             afa_nyers = m.group(6)
         else:
             nev = mj.group(1).strip()
-            menny = 1.0
-            me = "Ft"
-            ar = _hu_szam(mj.group(2))
+            netto_jovairo = _hu_szam(mj.group(2)) or 0.0
             afa_nyers = mj.group(3)
+            nev_low = nev.lower()
+
+            kapcsolodo = [
+                t for t in talalatok
+                if t["Mértékegység"] == "kWh" and t["Mennyiség"] > 0 and (
+                    ("földgáz díj" in nev_low and "földgáz díj" in t["Megnevezés"].lower())
+                    or ("forgalomarányos rhd" in nev_low and "forgalomarányos rhd" in t["Megnevezés"].lower() and "közbeszerzési" not in t["Megnevezés"].lower())
+                    or ("különleges készlet" in nev_low and "különleges készlet" in t["Megnevezés"].lower())
+                    or ("mszksz díj" in nev_low and "mszksz díj" in t["Megnevezés"].lower())
+                    or ("jövedéki adó" in nev_low and "jövedéki adó" in t["Megnevezés"].lower())
+                )
+            ]
+
+            if kapcsolodo and netto_jovairo != 0:
+                ossz_menny_k = sum(t["Mennyiség"] for t in kapcsolodo)
+                ossz_netto_k = sum(t["Mennyiség"] * t["Nettó egységár"] for t in kapcsolodo)
+                sulyozott_ar = round(ossz_netto_k / ossz_menny_k, 5) if ossz_menny_k > 0 else kapcsolodo["Nettó egységár"]
+                me = "kWh"
+                ar = sulyozott_ar
+                menny = round(netto_jovairo / ar, 2) if ar != 0 else 1.0
+            else:
+                menny = 1.0
+                me = "Ft"
+                ar = netto_jovairo
 
         afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
 
