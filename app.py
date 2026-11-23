@@ -215,7 +215,8 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
     talalatok = list()
     elozo_nev = ""
     for s in sorok:
-        s_tisztitott = re.sub(r"(?<=\d)(?=[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű%])", " ", s.strip())
+        s_tisztitott = re.sub(r"(?<=[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű%])(?=-?\d)", " ", s.strip())
+        s_tisztitott = re.sub(r"(?<=\d)(?=[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű%])", " ", s_tisztitott)
         s_tisztitott = re.sub(r"\bm\s+3\b", "m3", s_tisztitott)
         s_tisztitott = re.sub(r"kWh\s*/\s*h", "kWh/h", s_tisztitott)
         m = sor_re.match(s_tisztitott)
@@ -235,16 +236,6 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         kozep_szamok = re.findall(szam_minta, kozepso)
         ar = _hu_szam(kozep_szamok[0]) if kozep_szamok else None
 
-        if menny is None or ar is None:
-            continue
-
-        if "%" in kozepso or me_nyers in ("HUF", "Ft"):
-            me = "%"
-            ar = round(ar / 100.0, 6)
-        else:
-            me = me_nyers.replace("m³", "m3")
-            if netto_oszlop is not None and menny != 0 and abs((menny * ar) - netto_oszlop) > 5.0:
-                ar = round(netto_oszlop / menny, 6)
 
         talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
