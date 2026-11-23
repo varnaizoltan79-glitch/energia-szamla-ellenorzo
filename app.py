@@ -1694,40 +1694,24 @@ def mutat_rogzitett_szamlak():
                     st.session_state.pop("torles_megerosites_id", None)
                     st.rerun()
 
-    if kiv_szamla_id and szamla_obj:
-        col_tetel, col_pdf_elonezet = st.columns((1.25, 1))
-        with col_tetel:
-            szamla_tetelek = [t for t in osszes_tetel if int(t["szamla_id"]) == kiv_szamla_id]
-            st.subheader(f"📋 Számla díjtételei ({szamla_obj.get('szamlaszam', '')})")
-            if szamla_tetelek:
-                t_megj = [
-                    {
-                        "Megnevezés": t.get("megnevezes_eredeti", ""),
-                        "Mennyiség": float(t.get("mennyiseg") or 0),
-                        "Mértékegység": t.get("mertekegyseg", ""),
-                        "Nettó egységár (Ft)": float(t.get("egysegar_netto") or 0),
-                        "Nettó összeg (Ft)": int(round(float(t.get("szamitott_netto") or 0))),
-                        "ÁFA (%)": float(t.get("afa_kulcs") or 0),
-                        "Bruttó összeg (Ft)": int(round(float(t.get("szamitott_brutto") or 0)))
-                    }
-                    for t in szamla_tetelek
-                ]
-                st.dataframe(pd.DataFrame(t_megj), use_container_width=True, hide_index=True)
+        if kiv_szamla_id and szamla_obj:
+        szamla_tetelek = [t for t in osszes_tetel if int(t["szamla_id"]) == kiv_szamla_id]
+        st.subheader(f"📋 Számla díjtételei ({szamla_obj.get('szamlaszam', '')})")
+        if szamla_tetelek:
+            t_megj = [
+                {
+                    "Megnevezés": t.get("megnevezes_eredeti", ""),
+                    "Mennyiség": float(t.get("mennyiseg") or 0),
+                    "Mértékegység": t.get("mertekegyseg", ""),
+                    "Nettó egységár (Ft)": float(t.get("egysegar_netto") or 0),
+                    "Nettó összeg (Ft)": int(round(float(t.get("szamitott_netto") or 0))),
+                    "ÁFA (%)": float(t.get("afa_kulcs") or 0),
+                    "Bruttó összeg (Ft)": int(round(float(t.get("szamitott_brutto") or 0)))
+                }
+                for t in szamla_tetelek
+            ]
+            st.dataframe(pd.DataFrame(t_megj), use_container_width=True, hide_index=True)
 
-        with col_pdf_elonezet:
-            st.subheader("📄 Csatolt PDF számla")
-            if pdf_ut:
-                try:
-                    pdf_bytes = supabase.storage.from_("szamlak-pdf").download(pdf_ut)
-                    dok_elonezet = fitz.open(stream=pdf_bytes, filetype="pdf")
-                    st.download_button("📥 PDF letöltése", data=pdf_bytes, file_name=pdf_ut, mime="application/pdf", key=f"dl_{kiv_szamla_id}")
-                    for idx_p, oldal_p in enumerate(dok_elonezet):
-                        kep_p = oldal_p.get_pixmap(dpi=130)
-                        st.image(kep_p.tobytes("png"), caption=f"{idx_p + 1}. oldal", use_container_width=True)
-                except Exception as e:
-                    st.warning(f"A PDF előnézet nem tölthető be: {e}")
-            else:
-                st.info("Ehhez a számlához nincs feltöltött PDF fájl.")
 
 
 
