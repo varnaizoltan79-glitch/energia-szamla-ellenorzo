@@ -1796,7 +1796,7 @@ def mutat_szamla_rogzites(user_id):
     m2.metric("Számított Bruttó", ft_szoveg(ossz_brutto))
     m3.metric("Eltérés a számlától", ft_szoveg(elteres))
 
-    egyezik = (elteres == Decimal("0")) and (len(tetelek) > 0) and (szamlan_brutto > 0) and datum_rendben
+    egyezik = (elteres == Decimal("0")) and (len(tetelek) > 0) and (szamlan_brutto != 0) and datum_rendben
     if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
     if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha az eltérés pontosan 0 Ft (írd be a különbséget a Bruttó díj kompenzáció sorba) és a dátumok helyesek.")
 
