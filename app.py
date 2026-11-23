@@ -1693,11 +1693,10 @@ def mutat_rogzitett_szamlak():
                 if tc2.button("❌ Mégse", key=f"del_no_{kiv_szamla_id}"):
                     st.session_state.pop("torles_megerosites_id", None)
                     st.rerun()
-
-            if kiv_szamla_id and szamla_obj:
-        szamla_tetelek = [t for t in osszes_tetel if int(t["szamla_id"]) == kiv_szamla_id]
-        st.subheader(f"📋 Számla díjtételei ({szamla_obj.get('szamlaszam', '')})")
-        if szamla_tetelek:
+        if kiv_szamla_id and szamla_obj:
+            szamla_tetelek = [t for t in osszes_tetel if int(t["szamla_id"]) == kiv_szamla_id]
+            st.subheader(f"📋 Számla díjtételei ({szamla_obj.get('szamlaszam', '')})")
+            if szamla_tetelek:
             t_megj = [
                 {
                     "Megnevezés": t.get("megnevezes_eredeti", ""),
@@ -1712,7 +1711,7 @@ def mutat_rogzitett_szamlak():
             ]
             st.dataframe(pd.DataFrame(t_megj), use_container_width=True, hide_index=True)
 
-
+            
 def mutat_kimutatasok():
     st.header("📊 Kimutatások és Riportok")
     szurt_lista, df, osszes_tetel, netto_per_szamla, energia_kwh_per_szamla, h_map, _ = _betolt_szurt_szamlak("kim", mutass_energiatipus=True)
