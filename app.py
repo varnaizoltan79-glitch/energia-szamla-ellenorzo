@@ -210,127 +210,113 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         pod_ig = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
 
     akt_afa = 27.0
-    akt_me = "kWh"
-    meroallas_resz = False
-    talalatok = list()
-    egyes_szam_minta = r"(?:-\s*)?\d{1,3}(?: \d{3})+(?:,\d+)?|(?:-\s*)?\d+(?:,\d+)?"
+    szam_minta = r"-?\d{1,3}(?:[ .]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
+    me_minta = r"(kWh|MWh|kW|kVAhr|db|hó|m3|m³|MJ|GJ|csp)"
+    tetel_minta = re.compile(rf"^(.+?)\s+({szam_minta})\s+{me_minta}\s+({szam_minta})\s*(?:Ft(?:/[A-Za-z0-9³]+)?)?\s+({szam_minta})(?:\s+(27|5|18|0|AHK)\b)?")
+    kizaro = ("összesen", "részösszeg", "fizetendő", "számlaérték", "tétel megnevezése", "elszámolt mennyiség", "nettó egységár", "áfatartalom", "bruttó érték", "pod", "mérési pont")
 
+    talalatok = list()
+    pod_brutto = 0
     for s in sorok:
         s_low = s.lower()
-        if "mérőállás" in s_low or "mérőgyári" in s_low or "induló állás" in s_low:
-            meroallas_resz = True
-        if "kereskedelmi díjak" in s_low or "közvetített szolgáltatás" in s_low or "pénzeszközök" in s_low or "adóalapon kívüli" in s_low:
-            meroallas_resz = False
-        if meroallas_resz:
+        m_afa = re.search(r"(\d{1,2})\s*%\s*-?\s*os\s*áfa", s_low)
+        if m_afa:
+            akt_afa = float(m_afa.group(1))
             continue
 
-        if "adóalapon kívüli" in s_low or "pénzeszközök" in s_low:
-            akt_afa = 0.0
-        elif "kereskedelmi díjak" in s_low or "közvetített szolgáltatás" in s_low or "megnevezés" in s_low:
-            if "adóalapon kívüli" not in s_low:
-                akt_afa = 27.0
-
-        if "(kvarh)" in s_low:
-            akt_me = "kVArh"
-        elif "(kw)" in s_low:
-            akt_me = "kW"
-        elif "csatl.pont/db" in s_low or "(db)" in s_low:
-            akt_me = "db"
-        elif "(kwh)" in s_low:
-            akt_me = "kWh"
-
-        s_tagolt = re.sub(r"(\d{4}\.\d{2}\.\d{2}-\d{4}\.\d{2}\.\d{2})(\d)", r"\1  \2", s)
-        m_tetel = re.search(r"^(.+?)\s+(\d{4}\.\d{2}\.\d{2}-\d{4}\.\d{2}\.\d{2})\s+(.+)$", s_tagolt)
-        if not m_tetel:
+        m_pbr = re.search(r"(?:felhasználási\s*hely\s*összesen|mérési\s*pont\s*összesen|bruttó\s*összesen)\s*:?\s*([\d\.\s\xa0]+(?:,\d+)?)\s*Ft", s_low)
+        if m_pbr:
+            val_b = _hu_szam(m_pbr.group(1))
+            if val_b:
+                pod_brutto = int(round(val_b))
             continue
 
-        nev = m_tetel.group(1).strip()
-        maradek = m_tetel.group(3).strip()
-        szamok_raw = re.findall(egyes_szam_minta, maradek)
-        szamok = list(x for x in (_hu_szam(r) for r in szamok_raw) if x is not None)
-        if len(szamok) < 3:
+        if any(kz in s_low for kz in kizaro):
             continue
 
-        elso_szam, masodik_szam, *_ = szamok
-        netto_ellenorzes = next(reversed(szamok))
-        if alap_brutto > 0 and abs(netto_ellenorzes) > alap_brutto * 1.5:
+        m = tetel_minta.match(s)
+        if not m:
             continue
 
-        if "közbeszerzési" in nev.lower():
-            if abs((elso_szam * masodik_szam / 100.0) - netto_ellenorzes) <= 2.5:
-                talalatok.append({"Megnevezés": nev, "Mennyiség": 1.0, "Mértékegység": "db", "Nettó egységár": netto_ellenorzes, "ÁFA (%)": 27.0})
-        else:
-            if abs((elso_szam * masodik_szam) - netto_ellenorzes) <= 2.5:
-                talalatok.append({"Megnevezés": nev, "Mennyiség": elso_szam, "Mértékegység": akt_me, "Nettó egységár": masodik_szam, "ÁFA (%)": akt_afa})
+        nev = m.group(1).strip(" -–:|")
+        menny = _hu_szam(m.group(2))
+        me = m.group(3).replace("m³", "m3")
+        ar = _hu_szam(m.group(4))
+        afa_nyers = m.group(6)
+        afa = akt_afa if not afa_nyers else (0.0 if afa_nyers == "AHK" else float(afa_nyers))
+
+        if menny is not None and ar is not None:
+            talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
     tetelek_df = pd.DataFrame(talalatok) if talalatok else None
-    pod_brutto = 0
-    afa_bontasban = False
-    for s in sorok:
-        if "áfa szerinti bontás" in s.lower():
-            afa_bontasban = True
-        elif afa_bontasban and s.lower().startswith("összesen"):
-            szamok_raw = re.findall(egyes_szam_minta, s)
-            szamok = list(x for x in (_hu_szam(r) for r in szamok_raw) if x is not None)
-            if szamok:
-                pod_brutto = int(round(next(reversed(szamok))))
-            break
-
     if pod_brutto == 0 and tetelek_df is not None:
-        _, szam_brutto, _ = szamol_tetelek(tetelek_df)
-        pod_brutto = int(round(float(szam_brutto)))
-    elif pod_brutto == 0:
-        pod_brutto = alap_brutto
+        _, szam_br, _ = szamol_tetelek(tetelek_df)
+        pod_brutto = int(szam_br) if szam_br > 0 else alap_brutto
 
-    return pod, {"pod": pod, "brutto": pod_brutto, "tol": pod_tol, "ig": pod_ig, "tetelek_df": tetelek_df}
+    return {"pod": pod, "tol": pod_tol, "ig": pod_ig, "brutto": pod_brutto, "tetelek_df": tetelek_df}
 
 def _feldolgoz_mvm_pdf(dok, szoveg, adat):
     adat["szolgaltato_kulcs"] = "MVM"
-    m_sz = re.search(r"Számla\s*száma\s*:?\s*([A-Z0-9/-]{6,})", szoveg)
+    osszes_sor = list()
+    for oldal in dok:
+        osszes_sor.extend(_vizszintes_sorok(oldal))
+    rendezett_szoveg = "\n".join(osszes_sor)
+
+    m_sz = re.search(r"(?:Számla\s*sorszáma|Számlaszám)\s*:?\s*([A-Z0-9/-]{6,})", rendezett_szoveg, re.I)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
 
-    m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", szoveg)
+    m_ido = re.search(r"(?:Elszámolási|Elszámolt|Teljesítési)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
 
-    m_br = re.search(r"Fizetendő\s*:?\s*([\d\s\xa0]+)\s*Ft", szoveg)
+    m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
+    if m_k:
+        adat["kelte"] = datetime.strptime(m_k.group(1), "%Y.%m.%d").date()
+
+    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
+    if m_h:
+        adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
+
+    m_br = re.search(r"(?:Fizetendő\s*összeg|Fizetendő\s*összesen|Bruttó\s*számlaérték)\s*:?\s*([\d\.\s\xa0]+(?:,\d+)?)\s*Ft", rendezett_szoveg, re.I)
     if m_br:
         br_val = _hu_szam(m_br.group(1))
         if br_val:
             adat["brutto"] = int(round(br_val))
-            adat["foszamla_brutto"] = int(round(br_val))
+            adat["foszamla_brutto"] = adat["brutto"]
 
-    osszes_sor = list()
-    for oldal in dok:
-        osszes_sor.extend(_vizszintes_sorok(oldal))
+    pod_indulo_sorok = list()
+    for idx, s in enumerate(osszes_sor):
+        if re.search(r"HU\d{6}[-A-Z0-9]{10,}", s):
+            pod_indulo_sorok.append(idx)
 
-    kezdo_indexek = list(i for i, s in enumerate(osszes_sor) if "TELEPHELYI RÉSZLETEZŐ" in s.upper())
-    if not kezdo_indexek:
-        kezdo_indexek = list((0,))
+    if len(pod_indulo_sorok) > 1:
+        pod_adatok = dict()
+        for i, start_idx in enumerate(pod_indulo_sorok):
+            end_idx = pod_indulo_sorok[i + 1] if (i + 1 < len(pod_indulo_sorok)) else len(osszes_sor)
+            resz = _feldolgoz_mvm_pod_blokk(osszes_sor[start_idx:end_idx], adat["tol"], adat["ig"], 0)
+            if resz["pod"] and resz["tetelek_df"] is not None:
+                pod_adatok[resz["pod"]] = resz
+        if pod_adatok:
+            adat["pod_adatok"] = pod_adatok
+            elso_pod = next(iter(pod_adatok.values()))
+            adat["pod"] = elso_pod["pod"]
+            adat["brutto"] = elso_pod["brutto"]
+            adat["tol"] = elso_pod["tol"]
+            adat["ig"] = elso_pod["ig"]
+            adat["tetelek_df"] = elso_pod["tetelek_df"]
+    else:
+        resz = _feldolgoz_mvm_pod_blokk(osszes_sor, adat["tol"], adat["ig"], adat["brutto"])
+        if resz["pod"]:
+            adat["pod"] = resz["pod"]
+        if resz["tetelek_df"] is not None:
+            adat["tetelek_df"] = resz["tetelek_df"]
+        if resz["brutto"] > 0 and adat["brutto"] == 0:
+            adat["brutto"] = resz["brutto"]
 
-    osszevont_blokkok = list()
-    for idx, start_i in enumerate(kezdo_indexek):
-        end_i = kezdo_indexek[idx + 1] if idx + 1 < len(kezdo_indexek) else len(osszes_sor)
-        blokk = osszes_sor[start_i:end_i]
-        van_pod = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", "\n".join(blokk))
-        if van_pod or not osszevont_blokkok:
-            osszevont_blokkok.append(list(blokk))
-        else:
-            utolso_blokk = next(reversed(osszevont_blokkok))
-            utolso_blokk.extend(blokk)
+    return adat
 
-    pod_adatok = dict()
-    for blokk in osszevont_blokkok:
-        pod_nev, pod_info = _feldolgoz_mvm_pod_blokk(blokk, adat["tol"], adat["ig"], adat["brutto"])
-        if pod_nev:
-            pod_adatok[pod_nev] = pod_info
-
-    if pod_adatok:
-        adat["pod_adatok"] = pod_adatok
-        elso_pod = next(iter(pod_adatok.keys()))
-        adat["pod"] = elso_pod
 
 
 def _rendez_yx_szo(elem):
