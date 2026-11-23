@@ -1529,82 +1529,131 @@ def _alkalmaz_oszlop_szuroket(df, szurt_lista, kulcs_prefix="rogz_col"):
 
 def mutat_rogzitett_szamlak():
     st.header("📑 Rögzített számlák")
-    szurt_lista, df, _, _, _, h_map, legutobbi_id = _betolt_szurt_szamlak("rogz")
+    szurt_lista, df, osszes_tetel, netto_per_szamla, fogyasztas_per_szamla, h_map, s_map = _betolt_szurt_szamlak("rogz", mutass_energiatipus=True)
     if szurt_lista is None:
         return
-    df, szurt_lista = _alkalmaz_oszlop_szuroket(df, szurt_lista, "rogz_col")
 
-    def _szinez_utolso(sor):
-        if int(szurt_lista[sor.name]["id"]) == legutobbi_id:
-            return ["background-color: #d4edda; color: #155724; font-weight: bold"] * len(sor)
-        return [""] * len(sor)
+    ossz_brutto = int(df["Bruttó összeg (Ft)"].sum())
+    osszesen_sor = {
+        "ID": -1,
+        "Számlaszám": "ÖSSZESEN",
+        "Elszámolási hónap": f"{len(df)} db számla",
+        "Energiatípus": "",
+        "Felhasználási hely": "",
+        "Szolgáltató": "",
+        "Időszak kezdete": "",
+        "Időszak vége": "",
+        "Bruttó összeg (Ft)": ossz_brutto,
+        "Szumma nettó egységár": "",
+        "Státusz": "",
+        "PDF fájl": ""
+    }
 
-    st.yl_df = df.style.format({"Bruttó összeg (Ft)": ft_szoveg}).apply(_szinez_utolso, axis=1)
+    kiv_szamla_id = None
+    try:
+        from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 
-    rogz_ver = st.session_state.get("rogzitett_ver", 0)
-    st.caption("💡 Az utoljára rögzített számla sora zölddel van kiemelve. Kattints egy sor elejére a csatolt PDF megnyitásához!")
-    esemeny = st.dataframe(st.yl_df, use_container_width=True, on_select="rerun", selection_mode="single-row", key=f"rogz_df_{rogz_ver}")
-    if esemeny.selection.rows:
-        kiv_idx = next(iter(esemeny.selection.rows))
-        kiv_szamla = szurt_lista[kiv_idx]
-        if kiv_szamla.get("pdf_utvonal"):
-            mutat_pdf_ablak(kiv_szamla["pdf_utvonal"], kiv_szamla["szamlaszam"])
-        else:
-            st.warning("Ehhez a számlához nem lett PDF fájl feltöltve.")
+        gb = GridOptionsBuilder.from_dataframe(df)
+        gb.configure_default_column(
+            filter=True,
+            sortable=True,
+            resizable=True,
+            filterParams={"buttons": ["reset", "apply"], "closeOnApply": True}
+        )
+        gb.configure_column("ID", hide=True)
+        gb.configure_column("Számlaszám", checkboxSelection=True, headerCheckboxSelection=False, minWidth=145)
+        gb.configure_column(
+            "Bruttó összeg (Ft)",
+            type=["numericColumn"],
+            valueFormatter=JsCode("function(params) { return params.value != null ? Number(params.value).toLocaleString('hu-HU') + ' Ft' : ''; }")
+        )
+        gb.configure_selection(selection_mode="single", use_checkbox=False)
+        gb.configure_grid_options(
+            pinnedBottomRowData=[osszesen_sor],
+            getRowStyle=JsCode("function(params) { if (params.node.rowPinned) { return {'font-weight': 'bold', 'background-color': '#f0f2f6'}; } }")
+        )
 
-    csv = df.to_csv(index=False).encode("utf-8-sig")
-    st.download_button("📥 Rögzített számlák letöltése Excelbe (CSV)", data=csv, file_name=f"rogzitett_szamlak_{date.today()}.csv", mime="text/csv")
+        grid_valasz = AgGrid(
+            df,
+            gridOptions=gb.build(),
+            update_mode=GridUpdateMode.SELECTION_CHANGED,
+            allow_unsafe_jscode=True,
+            fit_columns_on_grid_load=False,
+            height=460,
+            key="rogzitett_szamlak_aggrid"
+        )
 
-    st.divider()
-    st.subheader("🗑️ Számlák törlése")
-    st.caption("☑️ Pipáld be a törölni kívánt számlák előtti jelölőnégyzetet!")
+        sel = grid_valasz.get("selected_rows")
+        if isinstance(sel, pd.DataFrame):
+            if not sel.empty and int(sel.iloc[0].get("ID", -1)) > 0:
+                kiv_szamla_id = int(sel.iloc[0]["ID"])
+        elif isinstance(sel, list) and len(sel) > 0:
+            if int(sel[0].get("ID", -1)) > 0:
+                kiv_szamla_id = int(sel[0]["ID"])
 
-    torles_sorok = list({
-        "Törlés": False,
-        "ID": int(s["id"]),
-        "Számlaszám": s["szamlaszam"],
-        "Elszámolási hónap": tiszta_honap(s.get("elszamolasi_honap")),
-        "Felhasználási hely": h_map.get(s["felhasznalasi_hely_id"], ""),
-        "Bruttó összeg (Ft)": ft_szoveg(s["szamlan_szereplo_brutto"])
-    } for s in szurt_lista)
+    except ImportError:
+        st.info("⏳ Az Excel-szerű oszlopszűrő betöltéséhez frissítsd a `requirements.txt` fájlt (`streamlit-aggrid`), addig az alap táblázat látható:")
+        df_megjelenit = pd.concat([df, pd.DataFrame([osszesen_sor])], ignore_index=True)
 
-    szerk_torles = st.data_editor(
-        pd.DataFrame(torles_sorok),
-        use_container_width=True,
-        hide_index=True,
-        disabled=list(("ID", "Számlaszám", "Elszámolási hónap", "Felhasználási hely", "Bruttó összeg (Ft)")),
-        column_config={
-            "Törlés": st.column_config.CheckboxColumn("Törlés", default=False)
-        },
-        key=f"torles_chk_ed_{rogz_ver}"
-    )
+        def _szinez_utolso(sor):
+            if str(sor.get("Számlaszám")) == "ÖSSZESEN":
+                return ["font-weight: bold; background-color: #f0f2f6"] * len(sor)
+            return [""] * len(sor)
 
-    kiv_torles_df = szerk_torles[szerk_torles["Törlés"] == True]
-    if not kiv_torles_df.empty:
-        kiv_idk = list(int(x) for x in kiv_torles_df["ID"])
-        kiv_lista = list(s for s in szurt_lista if int(s["id"]) in set(kiv_idk))
-        if st.button(f"🗑️ Kijelölt számlák törlése ({len(kiv_lista)} db)"):
-            st.session_state["torles_megerosites_idk"] = kiv_idk
-        if st.session_state.get("torles_megerosites_idk") == kiv_idk:
-            szamok_szoveg = ", ".join(s["szamlaszam"] for s in kiv_lista)
-            st.warning(f"⚠️ Biztos, hogy véglegesen törölni kívánja a kijelölt **{len(kiv_lista)} db** számlát? (**{szamok_szoveg}**)")
-            tc1, tc2, _ = st.columns((1.2, 1.2, 4))
-            if tc1.button("✅ Igen", type="primary"):
-                supabase.table("szamla_tetelek").delete().in_("szamla_id", kiv_idk).execute()
-                supabase.table("szamlak").delete().in_("id", kiv_idk).execute()
-                erintett_pdfek = set(s["pdf_utvonal"] for s in kiv_lista if s.get("pdf_utvonal"))
-                for pdf_ut in erintett_pdfek:
-                    maradt_e = supabase.table("szamlak").select("id").eq("pdf_utvonal", pdf_ut).execute().data or list()
-                    if not maradt_e:
-                        supabase.storage.from_("szamlak-pdf").remove(list((pdf_ut,)))
-                st.session_state.pop("torles_megerosites_idk", None)
-                st.session_state["rogzitett_ver"] = rogz_ver + 1
-                st.success(f"✅ {len(kiv_lista)} db számla sikeresen törölve lett!")
-                st.rerun()
-            if tc2.button("❌ Nem"):
-                st.session_state.pop("torles_megerosites_idk", None)
-                st.session_state["rogzitett_ver"] = rogz_ver + 1
-                st.rerun()
+        esemeny = st.dataframe(
+            df_megjelenit.style.apply(_szinez_utolso, axis=1),
+            use_container_width=True,
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            column_config={"ID": None, "Bruttó összeg (Ft)": st.column_config.NumberColumn("Bruttó összeg (Ft)", format="%d Ft")},
+            key="rogzitett_szamlak_df"
+        )
+        kiv_sorok = esemeny.selection.rows if esemeny and hasattr(esemeny, "selection") else list()
+        if kiv_sorok and kiv_sorok[0] < len(df):
+            kiv_szamla_id = int(df.iloc[kiv_sorok[0]]["ID"])
+
+    if kiv_szamla_id:
+        szamla_obj = next((s for s in szurt_lista if int(s["id"]) == kiv_szamla_id), None)
+        if szamla_obj:
+            st.divider()
+            c_info, c_pdf, c_torol = st.columns((3, 1.2, 1.2))
+            c_info.subheader(f"🧾 Kiválasztott számla: {szamla_obj.get('szamlaszam', '')}")
+            pdf_ut = szamla_obj.get("pdf_fajlnev")
+            if pdf_ut:
+                if c_pdf.button("📄 PDF megtekintése", key=f"pdf_btn_{kiv_szamla_id}"):
+                    mutat_pdf_ablak(pdf_ut, szamla_obj.get("szamlaszam", ""))
+            if c_torol.button("🗑️ Számla törlése", key=f"del_btn_{kiv_szamla_id}"):
+                st.session_state["torles_megerosites_id"] = kiv_szamla_id
+
+            if st.session_state.get("torles_megerosites_id") == kiv_szamla_id:
+                st.warning(f"⚠️ Biztosan törölni szeretnéd a(z) **{szamla_obj.get('szamlaszam', '')}** számlát és minden tételét?")
+                tc1, tc2, _ = st.columns((1, 1, 4))
+                if tc1.button("✅ Igen, törlés", type="primary", key=f"del_yes_{kiv_szamla_id}"):
+                    supabase.table("szamla_tetelek").delete().eq("szamla_id", kiv_szamla_id).execute()
+                    supabase.table("szamlak").delete().eq("id", kiv_szamla_id).execute()
+                    st.session_state.pop("torles_megerosites_id", None)
+                    st.success("✅ Számla törölve!")
+                    st.rerun()
+                if tc2.button("❌ Mégse", key=f"del_no_{kiv_szamla_id}"):
+                    st.session_state.pop("torles_megerosites_id", None)
+                    st.rerun()
+
+            szamla_tetelek = [t for t in osszes_tetel if int(t["szamla_id"]) == kiv_szamla_id]
+            if szamla_tetelek:
+                t_megj = [
+                    {
+                        "Megnevezés": t.get("megnevezes_eredeti", ""),
+                        "Mennyiség": float(t.get("mennyiseg") or 0),
+                        "Mértékegység": t.get("mertekegyseg", ""),
+                        "Nettó egységár (Ft)": float(t.get("egysegar_netto") or 0),
+                        "Nettó összeg (Ft)": int(round(float(t.get("szamitott_netto") or 0))),
+                        "ÁFA (%)": float(t.get("afa_kulcs") or 0),
+                        "Bruttó összeg (Ft)": int(round(float(t.get("szamitott_brutto") or 0)))
+                    }
+                    for t in szamla_tetelek
+                ]
+                st.dataframe(pd.DataFrame(t_megj), use_container_width=True, hide_index=True)
 
 
 
