@@ -178,11 +178,13 @@ def _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat):
         if m_h:
             adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
 
-    m_br = re.search(r"Fizetendő\s*összesen[:\s]+(-?[\d\.\s\xa0]+,\d{2})\s*Ft", szoveg)
+        rendezett_szoveg = "\n".join(oldal_sorok)
+    m_br = re.search(r"Fizetendő\s*összesen[:\s]+([-−–]?\s*[\d\.\s\xa0]+,\d{2})\s*Ft", rendezett_szoveg) or re.search(r"Fizetendő\s*összesen[:\s]+([-−–]?\s*[\d\.\s\xa0]+,\d{2})\s*Ft", szoveg)
     if m_br:
         br_val = _hu_szam(m_br.group(1))
         if br_val is not None:
             adat["brutto"] = int(round(br_val))
+
 
     szam_minta = r"-?\d[\d\.]*,\d+"
     egesz_vagy_tizedes = r"-?\d[\d\.]*(?:,\d+)?"
