@@ -1490,7 +1490,7 @@ def mutat_szamla_rogzites(user_id):
     alap_df = pd.concat([alap_df, komp_sor], ignore_index=True)
 
 
-        def _frissit_tetel_osszegek(df_be):
+    def _frissit_tetel_osszegek(df_be):
         df_ki = df_be.copy()
         nettos = list()
         bruttos = list()
