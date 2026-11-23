@@ -1556,20 +1556,51 @@ def mutat_rogzitett_szamlak():
         gb = GridOptionsBuilder.from_dataframe(df)
         gb.configure_default_column(
             filter=True,
+            floatingFilter=True,
+            suppressMenuHide=True,
             sortable=True,
             resizable=True,
             filterParams={"buttons": ["reset", "apply"], "closeOnApply": True}
         )
         gb.configure_column("ID", hide=True)
-        gb.configure_column("Számlaszám", checkboxSelection=True, headerCheckboxSelection=False, minWidth=145)
+        gb.configure_column("Számlaszám", checkboxSelection=True, headerCheckboxSelection=False, minWidth=155)
         gb.configure_column(
             "Bruttó összeg (Ft)",
             type=["numericColumn"],
             valueFormatter=JsCode("function(params) { return params.value != null ? Number(params.value).toLocaleString('hu-HU') + ' Ft' : ''; }")
         )
         gb.configure_selection(selection_mode="single", use_checkbox=False)
+
+        frissit_osszesen_js = JsCode("""
+        function(params) {
+            let db = 0;
+            let osszeg = 0;
+            params.api.forEachNodeAfterFilter(function(node) {
+                if (node.data && node.data.ID > 0) {
+                    db += 1;
+                    osszeg += Number(node.data['Bruttó összeg (Ft)'] || 0);
+                }
+            });
+            params.api.setGridOption('pinnedBottomRowData', [{
+                'ID': -1,
+                'Számlaszám': 'ÖSSZESEN',
+                'Elszámolási hónap': db + ' db számla',
+                'Energiatípus': '',
+                'Felhasználási hely': '',
+                'Szolgáltató': '',
+                'Időszak kezdete': '',
+                'Időszak vége': '',
+                'Bruttó összeg (Ft)': osszeg,
+                'Szumma nettó egységár': '',
+                'Státusz': '',
+                'PDF fájl': ''
+            }]);
+        }
+        """)
+
         gb.configure_grid_options(
             pinnedBottomRowData=[osszesen_sor],
+            onFilterChanged=frissit_osszesen_js,
             getRowStyle=JsCode("function(params) { if (params.node.rowPinned) { return {'font-weight': 'bold', 'background-color': '#f0f2f6'}; } }")
         )
 
@@ -1584,15 +1615,16 @@ def mutat_rogzitett_szamlak():
         )
 
         sel = grid_valasz.get("selected_rows")
-        if isinstance(sel, pd.DataFrame):
-            if not sel.empty and int(sel.iloc[0].get("ID", -1)) > 0:
-                kiv_szamla_id = int(sel.iloc[0]["ID"])
+        if isinstance(sel, pd.DataFrame) and not sel.empty:
+            rekord = next(iter(sel.to_dict(orient="records")))
+            if int(rekord.get("ID") or -1) > 0:
+                kiv_szamla_id = int(rekord["ID"])
         elif isinstance(sel, list) and len(sel) > 0:
-            if int(sel[0].get("ID", -1)) > 0:
-                kiv_szamla_id = int(sel[0]["ID"])
+            rekord = next(iter(sel))
+            if isinstance(rekord, dict) and int(rekord.get("ID") or -1) > 0:
+                kiv_szamla_id = int(rekord["ID"])
 
     except ImportError:
-        st.info("⏳ Az Excel-szerű oszlopszűrő betöltéséhez frissítsd a `requirements.txt` fájlt (`streamlit-aggrid`), addig az alap táblázat látható:")
         df_megjelenit = pd.concat([df, pd.DataFrame([osszesen_sor])], ignore_index=True)
 
         def _szinez_utolso(sor):
@@ -1610,30 +1642,39 @@ def mutat_rogzitett_szamlak():
             key="rogzitett_szamlak_df"
         )
         kiv_sorok = esemeny.selection.rows if esemeny and hasattr(esemeny, "selection") else list()
-        if kiv_sorok and kiv_sorok[0] < len(df):
-            kiv_szamla_id = int(df.iloc[kiv_sorok[0]]["ID"])
+        elso_idx = next(iter(kiv_sorok), None)
+        if elso_idx is not None and elso_idx < len(df):
+            kiv_szamla_id = int(df.iloc[elso_idx]["ID"])
 
     if kiv_szamla_id:
         szamla_obj = next((s for s in szurt_lista if int(s["id"]) == kiv_szamla_id), None)
         if szamla_obj:
             st.divider()
-            c_info, c_pdf, c_torol = st.columns((3, 1.2, 1.2))
+            c_info, c_pdf, c_torol = st.columns((3, 1.3, 1.3))
             c_info.subheader(f"🧾 Kiválasztott számla: {szamla_obj.get('szamlaszam', '')}")
             pdf_ut = szamla_obj.get("pdf_fajlnev")
             if pdf_ut:
-                if c_pdf.button("📄 PDF megtekintése", key=f"pdf_btn_{kiv_szamla_id}"):
+                if c_pdf.button("📄 PDF számla megnyitása", type="primary", key=f"pdf_btn_{kiv_szamla_id}"):
                     mutat_pdf_ablak(pdf_ut, szamla_obj.get("szamlaszam", ""))
+            else:
+                c_pdf.caption("Nincs csatolt PDF")
+
             if c_torol.button("🗑️ Számla törlése", key=f"del_btn_{kiv_szamla_id}"):
                 st.session_state["torles_megerosites_id"] = kiv_szamla_id
 
             if st.session_state.get("torles_megerosites_id") == kiv_szamla_id:
-                st.warning(f"⚠️ Biztosan törölni szeretnéd a(z) **{szamla_obj.get('szamlaszam', '')}** számlát és minden tételét?")
-                tc1, tc2, _ = st.columns((1, 1, 4))
-                if tc1.button("✅ Igen, törlés", type="primary", key=f"del_yes_{kiv_szamla_id}"):
+                st.warning(f"⚠️ Biztosan törölni szeretnéd a(z) **{szamla_obj.get('szamlaszam', '')}** számlát és minden díjtételét?")
+                tc1, tc2, _ = st.columns((1.3, 1.2, 4))
+                if tc1.button("✅ Igen, végleges törlés", type="primary", key=f"del_yes_{kiv_szamla_id}"):
                     supabase.table("szamla_tetelek").delete().eq("szamla_id", kiv_szamla_id).execute()
                     supabase.table("szamlak").delete().eq("id", kiv_szamla_id).execute()
+                    if pdf_ut:
+                        try:
+                            supabase.storage.from_("szamlak-pdf").remove(list((pdf_ut,)))
+                        except Exception:
+                            pass
                     st.session_state.pop("torles_megerosites_id", None)
-                    st.success("✅ Számla törölve!")
+                    st.success("✅ Számla sikeresen törölve!")
                     st.rerun()
                 if tc2.button("❌ Mégse", key=f"del_no_{kiv_szamla_id}"):
                     st.session_state.pop("torles_megerosites_id", None)
