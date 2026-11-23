@@ -1532,7 +1532,7 @@ def mutat_rogzitett_szamlak():
     szurt_lista, df, _, _, _, h_map, legutobbi_id = _betolt_szurt_szamlak("rogz")
     if szurt_lista is None:
         return
-df, szurt_lista = _alkalmaz_oszlop_szuroket(df, szurt_lista, "rogz_col")
+    df, szurt_lista = _alkalmaz_oszlop_szuroket(df, szurt_lista, "rogz_col")
 
     def _szinez_utolso(sor):
         if int(szurt_lista[sor.name]["id"]) == legutobbi_id:
