@@ -1657,7 +1657,7 @@ def mutat_rogzitett_szamlak():
             kiv_szamla_id = int(df.iloc[elso_idx]["ID"])
 
         with akcio_hely:
-        szamla_map_id = {int(s["id"]): s for s in szurt_lista}
+            szamla_map_id = {int(s["id"]): s for s in szurt_lista}
         if not kiv_szamla_id and szurt_lista:
             kiv_szamla_id = int(next(iter(szurt_lista))["id"])
 
