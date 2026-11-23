@@ -1401,7 +1401,8 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
     val_szolg = fc3.selectbox("🏢 Szolgáltató:", szolg_nevek, key=f"{kulcs_prefix}_f_szolg")
 
     honapok = sorted(list(set(tiszta_honap(s.get("elszamolasi_honap")) for s in szamlak_data)), key=honap_kulcs)
-    val_honapok = fc4.multiselect("📅 Elszámolási hónap:", honapok, default=honapok, key=f"{kulcs_prefix}_f_ho")
+    val_honapok = fc4.multiselect("📅 Elszámolási hónap:", honapok, default=[], placeholder="Összes hónap", key=f"{kulcs_prefix}_f_ho")
+
 
     szurt_lista = list()
     for s in szamlak_data:
