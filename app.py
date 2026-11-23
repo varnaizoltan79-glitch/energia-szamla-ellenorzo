@@ -1490,10 +1490,14 @@ def mutat_szamla_rogzites(user_id):
     alap_df = pd.concat([alap_df, komp_sor], ignore_index=True)
 
 
-    def _frissit_tetel_osszegek(df_be):
+        def _frissit_tetel_osszegek(df_be):
         df_ki = df_be.copy()
         nettos = list()
         bruttos = list()
+        komp_idx = None
+        komp_val = 0
+        mas_brutto_ossz = Decimal("0")
+
         for idx_r, sor in df_ki.iterrows():
             if str(sor.get("Megnevezés") or "").strip() == "Bruttó díj kompenzáció":
                 df_ki.at[idx_r, "Mennyiség"] = None
@@ -1503,6 +1507,7 @@ def mutat_szamla_rogzites(user_id):
                 negativ = "-" in br_nyers
                 szamjegyek = re.sub(r"\D", "", br_nyers)
                 komp_val = (-int(szamjegyek) if negativ else int(szamjegyek)) if szamjegyek else 0
+                komp_idx = len(bruttos)
                 nettos.append("")
                 bruttos.append(ft_szoveg(komp_val))
                 continue
@@ -1519,8 +1524,17 @@ def mutat_szamla_rogzites(user_id):
             afa_d = Decimal(str(afa_v)) if (afa_v is not None and not pd.isna(afa_v)) else Decimal("27.0")
             n_val = (menny_d * ar_d).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
             b_val = (n_val * (Decimal("1") + afa_d / Decimal("100"))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            mas_brutto_ossz += b_val
             nettos.append(ft_szoveg(n_val))
             bruttos.append(ft_szoveg(b_val))
+
+        if komp_idx is not None and szamlan_brutto > 0:
+            akt_elt = Decimal(szamlan_brutto) - (mas_brutto_ossz + Decimal(komp_val))
+            if akt_elt != Decimal("0"):
+                bruttos[komp_idx] = f"🔴 {ft_szoveg(komp_val)}"
+            elif komp_val != 0:
+                bruttos[komp_idx] = f"🟢 {ft_szoveg(komp_val)}"
+
         df_ki["Nettó összeg (Ft)"] = nettos
         df_ki["Bruttó összeg (Ft)"] = bruttos
         return df_ki
@@ -1528,33 +1542,16 @@ def mutat_szamla_rogzites(user_id):
     df_state_kulcs = f"tetel_tabla_{form_kulcs}"
     if df_state_kulcs not in st.session_state:
         st.session_state[df_state_kulcs] = _frissit_tetel_osszegek(alap_df)
-
-    _, elozetes_brutto, _ = szamol_tetelek(st.session_state[df_state_kulcs])
-    elozetes_elteres = Decimal(szamlan_brutto) - elozetes_brutto
-
-    def _szinez_kompenzacio(sor):
-        stilusok = [""] * len(sor)
-        if str(sor.get("Megnevezés") or "").strip() == "Bruttó díj kompenzáció" and "Bruttó összeg (Ft)" in sor.index:
-            br_idx = list(sor.index).index("Bruttó összeg (Ft)")
-            br_nyers = str(sor.get("Bruttó összeg (Ft)") or "")
-            szamjegyek = re.sub(r"\D", "", br_nyers)
-            komp_van = bool(szamjegyek and int(szamjegyek) != 0)
-            if szamlan_brutto > 0 and elozetes_elteres != Decimal("0"):
-                stilusok[br_idx] = "background-color: #f8d7da; color: #721c24; font-weight: bold"
-            elif szamlan_brutto > 0 and elozetes_elteres == Decimal("0") and komp_van:
-                stilusok[br_idx] = "background-color: #d4edda; color: #155724; font-weight: bold"
-        return stilusok
-
-    stilizalt_df = st.session_state[df_state_kulcs].style.apply(_szinez_kompenzacio, axis=1)
+    else:
+        st.session_state[df_state_kulcs] = _frissit_tetel_osszegek(st.session_state[df_state_kulcs])
 
     szerk_df = st.data_editor(
-        stilizalt_df,
+        st.session_state[df_state_kulcs],
         num_rows="dynamic",
         use_container_width=True,
         disabled=list(("Nettó összeg (Ft)",)),
         key=f"ed_{form_kulcs}"
     )
-
 
     ujraszamolt_df = _frissit_tetel_osszegek(szerk_df)
     regi_parok = list(zip(st.session_state[df_state_kulcs]["Nettó összeg (Ft)"], st.session_state[df_state_kulcs]["Bruttó összeg (Ft)"]))
@@ -1564,6 +1561,7 @@ def mutat_szamla_rogzites(user_id):
         st.rerun()
 
     ossz_netto, ossz_brutto, tetelek = szamol_tetelek(ujraszamolt_df)
+
 
     brutto_dec = Decimal(szamlan_brutto)
     elteres = brutto_dec - ossz_brutto
