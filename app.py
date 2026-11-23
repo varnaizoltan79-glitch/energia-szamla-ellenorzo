@@ -210,33 +210,30 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         pod_ig = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
 
     szam_minta = r"-?\d{1,3}(?:[ .]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
-    me_kar = r"(?:m3|[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű/³]+)"
-    sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+({szam_minta})\s+({me_kar})\s+(?:({szam_minta})\s+(HUF/{me_kar}|%)|({me_kar})\s+({szam_minta}))\s+({szam_minta})\s+(\d{{1,2}})\s*$")
+    sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+({szam_minta})\s*(kWh/h|kWh|m3|m³|MJ|GJ|HUF|Ft|db|hó)\s+(.+?)\s+({szam_minta})\s+(\d{{1,2}})\s*$")
 
     talalatok = list()
     for s in sorok:
-        s_tisztitott = re.sub(r"(?<=[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű%])(?=-?\d)", " ", s.strip())
-        s_tisztitott = re.sub(r"(?<=\d)(?=[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű%])", " ", s_tisztitott)
+        s_tisztitott = re.sub(r"(?<=\d)(?=[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű%])", " ", s.strip())
         s_tisztitott = re.sub(r"\bm\s+3\b", "m3", s_tisztitott)
+        s_tisztitott = re.sub(r"kWh\s*/\s*h", "kWh/h", s_tisztitott)
         m = sor_re.match(s_tisztitott)
         if not m:
             continue
         nev = m.group(1).strip(" -–:|")
         menny = _hu_szam(m.group(4))
         me_nyers = m.group(5)
-        if m.group(6) is not None:
-            ar = _hu_szam(m.group(6))
-            ar_me = m.group(7)
-        else:
-            ar_me = m.group(8)
-            ar = _hu_szam(m.group(9))
-        netto_oszlop = _hu_szam(m.group(10))
-        afa = float(m.group(11))
+        kozepso = m.group(6)
+        netto_oszlop = _hu_szam(m.group(7))
+        afa = float(m.group(8))
+
+        kozep_szamok = re.findall(szam_minta, kozepso)
+        ar = _hu_szam(kozep_szamok[0]) if kozep_szamok else None
 
         if menny is None or ar is None:
             continue
 
-        if ar_me == "%":
+        if "%" in kozepso or me_nyers in ("HUF", "Ft"):
             me = "%"
             ar = round(ar / 100.0, 6)
         else:
@@ -253,6 +250,7 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         pod_brutto = int(szam_br)
 
     return {"pod": pod, "tol": pod_tol, "ig": pod_ig, "brutto": pod_brutto, "tetelek_df": tetelek_df}
+
 
 
 def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
