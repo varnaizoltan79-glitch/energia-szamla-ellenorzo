@@ -210,7 +210,7 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         pod_ig = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
 
     szam_minta = r"-?\d{1,3}(?:[ .]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
-    sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s*[-–]\s*(\d{{4}}\.\d{{2}}\.\d{{2}})\s+({szam_minta})\s+({szam_minta})(?:\s+(KIF\d+|KÖF|NAF|A\d+|B\d+))?\s+({szam_minta})\s*$")
+    sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s*[-–]\s*(\d{{4}}\.\d{{2}}\.\d{{2}})\s*({szam_minta})\s+({szam_minta})(?:\s+(KIF\d+|KÖF|NAF|A\d+|B\d+))?\s+({szam_minta})\s*$")
     kizaro_eleje = ("összesen", "kereskedelmi díjak", "pénzeszközök", "közvetített szolgáltatás", "megnevezés", "áfa szerinti bontás", "mérő gyári", "mért időszak", "szerződésszám", "mérési pont", "fogyasztási hely", "telephelyre vonatkozó", "oldalak száma")
 
     akt_me = "kWh"
@@ -244,7 +244,7 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
             akt_me = "%"
             akt_afa = 27.0
             continue
-        elif "mennyiség (kwh)" in s_low:
+        elif "mennyiség (kwh)" in s_low or "közvetített szolgáltatás" in s_low:
             akt_me = "kWh"
             akt_afa = 27.0
             continue
@@ -262,7 +262,8 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         if any(s_low.startswith(kz) for kz in kizaro_eleje):
             continue
 
-        m = sor_re.match(s.strip())
+        s_tiszta = re.sub(r"(\d{4}\.\d{2}\.\d{2}\s*[-–]\s*\d{4}\.\d{2}\.\d{2})(?=\d)", r"\1 ", s.strip())
+        m = sor_re.match(s_tiszta)
         if not m:
             continue
 
@@ -339,7 +340,8 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
             adat["ig"] = elso_pod["ig"]
             adat["tetelek_df"] = elso_pod["tetelek_df"]
     else:
-        resz = _feldolgoz_mvm_pod_blokk(osszes_sor, adat["tol"], adat["ig"], adat["brutto"])
+        resz_sorok = osszes_sor[pod_indulo_sorok[0]:] if pod_indulo_sorok else osszes_sor
+        resz = _feldolgoz_mvm_pod_blokk(resz_sorok, adat["tol"], adat["ig"], adat["brutto"])
         if resz["pod"]:
             adat["pod"] = resz["pod"]
         if resz["tetelek_df"] is not None:
