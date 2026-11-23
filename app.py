@@ -1525,17 +1525,36 @@ def mutat_szamla_rogzites(user_id):
         df_ki["Bruttó összeg (Ft)"] = bruttos
         return df_ki
 
-    df_state_kulcs = f"tetel_tabla_{form_kulcs}"
+        df_state_kulcs = f"tetel_tabla_{form_kulcs}"
     if df_state_kulcs not in st.session_state:
         st.session_state[df_state_kulcs] = _frissit_tetel_osszegek(alap_df)
 
+    _, elozetes_brutto, _ = szamol_tetelek(st.session_state[df_state_kulcs])
+    elozetes_elteres = Decimal(szamlan_brutto) - elozetes_brutto
+
+    def _szinez_kompenzacio(sor):
+        stilusok = [""] * len(sor)
+        if str(sor.get("Megnevezés") or "").strip() == "Bruttó díj kompenzáció" and "Bruttó összeg (Ft)" in sor.index:
+            br_idx = list(sor.index).index("Bruttó összeg (Ft)")
+            br_nyers = str(sor.get("Bruttó összeg (Ft)") or "")
+            szamjegyek = re.sub(r"\D", "", br_nyers)
+            komp_van = bool(szamjegyek and int(szamjegyek) != 0)
+            if szamlan_brutto > 0 and elozetes_elteres != Decimal("0"):
+                stilusok[br_idx] = "background-color: #f8d7da; color: #721c24; font-weight: bold"
+            elif szamlan_brutto > 0 and elozetes_elteres == Decimal("0") and komp_van:
+                stilusok[br_idx] = "background-color: #d4edda; color: #155724; font-weight: bold"
+        return stilusok
+
+    stilizalt_df = st.session_state[df_state_kulcs].style.apply(_szinez_kompenzacio, axis=1)
+
     szerk_df = st.data_editor(
-        st.session_state[df_state_kulcs],
+        stilizalt_df,
         num_rows="dynamic",
         use_container_width=True,
         disabled=list(("Nettó összeg (Ft)",)),
         key=f"ed_{form_kulcs}"
     )
+
 
     ujraszamolt_df = _frissit_tetel_osszegek(szerk_df)
     regi_parok = list(zip(st.session_state[df_state_kulcs]["Nettó összeg (Ft)"], st.session_state[df_state_kulcs]["Bruttó összeg (Ft)"]))
