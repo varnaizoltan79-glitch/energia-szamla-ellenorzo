@@ -27,8 +27,15 @@ def urit_urlap():
     st.session_state["form_ver"] += 1
 
 def formaz_ezres(kulcs):
-    nyers = re.sub(r"\D", "", st.session_state.get(kulcs, ""))
-    st.session_state[kulcs] = f"{int(nyers):,}".replace(",", " ") if nyers else ""
+    szov = st.session_state.get(kulcs, "")
+    neg = "-" in szov
+    nyers = re.sub(r"\D", "", szov)
+    if nyers:
+        formazott = f"{int(nyers):,}".replace(",", " ")
+        st.session_state[kulcs] = f"-{formazott}" if neg else formazott
+    else:
+        st.session_state[kulcs] = "-" if neg else ""
+
 
 def ft_szoveg(ertek):
     return f"{int(round(float(ertek))):,} Ft".replace(",", " ")
