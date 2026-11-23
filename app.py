@@ -1345,61 +1345,56 @@ def mutat_torzsadatok():
                         st.rerun()
 
 def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
-    lista = supabase.table("szamlak").select("*").order("id", desc=True).execute().data or list()
-    if not lista:
-        st.info("Még nincs mentett számla.")
+    szamlak_data = supabase.table("szamlak").select("*").order("id", desc=True).execute().data or list()
+    helyek_data = supabase.table("felhasznalasi_helyek").select("id, megnevezes, energiatipus").execute().data or list()
+    szolg_data = supabase.table("szolgaltatok").select("id, nev").execute().data or list()
+
+    h_map = {h["id"]: h["megnevezes"] for h in helyek_data}
+    h_energia_map = {h["id"]: (h.get("energiatipus") or "Villamos energia") for h in helyek_data}
+    s_map = {s["id"]: s["nev"] for s in szolg_data}
+
+    if not szamlak_data:
+        st.info("Még nincs rögzített számla az adatbázisban.")
         return None, None, None, None, None, None, None
 
-    legutobbi_id = max(int(s["id"]) for s in lista)
-    hely_adatok = supabase.table("felhasznalasi_helyek").select("id, megnevezes, energiatipus").execute().data or list()
-    szolg_adatok = supabase.table("szolgaltatok").select("id, nev, energiatipus").execute().data or list()
-    h_map = {h["id"]: h["megnevezes"] for h in hely_adatok}
-    h_et_map = {h["id"]: (h.get("energiatipus") or "") for h in hely_adatok}
-    sz_map = {s["id"]: s["nev"] for s in szolg_adatok}
-    sz_et_map = {s["id"]: (s.get("energiatipus") or "") for s in szolg_adatok}
+    fc1, fc2, fc3, fc4 = st.columns(4)
+    energia_opciok = ["Összes"] + sorted(list(set(h_energia_map.values())))
+    val_energia = fc1.selectbox("⚡ Energiatípus:", energia_opciok, key=f"{kulcs_prefix}_f_energia")
 
-    et_per_szamla = dict()
-    for s in lista:
-        et_val = h_et_map.get(s["felhasznalasi_hely_id"]) or sz_et_map.get(s["szolgaltato_id"]) or "Nincs megadva"
-        et_per_szamla[s["id"]] = et_val
+    hely_nevek = ["Összes"] + sorted(list(set(h_map.get(s["felhasznalasi_hely_id"], "Ismeretlen") for s in szamlak_data)))
+    val_hely = fc2.selectbox("🏭 Felhasználási hely:", hely_nevek, key=f"{kulcs_prefix}_f_hely")
 
-    osszes_honap = sorted(list({tiszta_honap(s.get("elszamolasi_honap")) for s in lista}), key=honap_kulcs, reverse=True)
-    osszes_et = sorted(list(set(et_per_szamla.values())))
+    szolg_nevek = ["Összes"] + sorted(list(set(s_map.get(s["szolgaltato_id"], "Ismeretlen") for s in szamlak_data)))
+    val_szolg = fc3.selectbox("🏢 Szolgáltató:", szolg_nevek, key=f"{kulcs_prefix}_f_szolg")
 
-    if mutass_energiatipus:
-        fs1, fs2, fs3 = st.columns(3)
-        val_honapok = fs1.multiselect("📅 Elszámolási hónap (üresen = összes):", osszes_honap, key=f"{kulcs_prefix}_ho")
-        val_et = fs2.multiselect("⚡ Energiatípus (üresen = összes):", osszes_et, key=f"{kulcs_prefix}_et")
-        szurt_hely_nevek = sorted(list({h_map.get(s["felhasznalasi_hely_id"], "Ismeretlen") for s in lista if not val_et or et_per_szamla[s["id"]] in val_et}))
-        val_helyek = fs3.multiselect("🏭 Felhasználási hely (üresen = összes):", szurt_hely_nevek, key=f"{kulcs_prefix}_hely")
-    else:
-        fs1, fs2 = st.columns(2)
-        val_honapok = fs1.multiselect("📅 Szűrés elszámolási hónapra (üresen = összes):", osszes_honap, key=f"{kulcs_prefix}_ho")
-        val_et = list()
-        osszes_hely = sorted(list({h_map.get(s["felhasznalasi_hely_id"], "Ismeretlen") for s in lista}))
-        val_helyek = fs2.multiselect("🏭 Szűrés felhasználási helyre (üresen = összes):", osszes_hely, key=f"{kulcs_prefix}_hely")
+    honapok = sorted(list(set(tiszta_honap(s.get("elszamolasi_honap")) for s in szamlak_data)), key=honap_kulcs)
+    val_honapok = fc4.multiselect("📅 Elszámolási hónap:", honapok, default=honapok, key=f"{kulcs_prefix}_f_ho")
 
     szurt_lista = list()
-    for s in lista:
+    for s in szamlak_data:
+        hid = s["felhasznalasi_hely_id"]
+        e_tipus = h_energia_map.get(hid, "Villamos energia")
+        h_nev = h_map.get(hid, "Ismeretlen")
+        s_nev = s_map.get(s["szolgaltato_id"], "Ismeretlen")
         ho_cimke = tiszta_honap(s.get("elszamolasi_honap"))
-        hely_cimke = h_map.get(s["felhasznalasi_hely_id"], "Ismeretlen")
-        et_cimke = et_per_szamla[s["id"]]
+
+        if val_energia != "Összes" and e_tipus != val_energia:
+            continue
+        if val_hely != "Összes" and h_nev != val_hely:
+            continue
+        if val_szolg != "Összes" and s_nev != val_szolg:
+            continue
         if val_honapok and ho_cimke not in val_honapok:
-            continue
-        if val_et and et_cimke not in val_et:
-            continue
-        if val_helyek and hely_cimke not in val_helyek:
             continue
         szurt_lista.append(s)
 
     if not szurt_lista:
-        st.warning("A megadott szűrőkkel nincs találat.")
+        st.warning("A megadott szűrőfeltételekkel nincs találat.")
         return None, None, None, None, None, None, None
-
-    szurt_lista.sort(key=lambda s: (honap_kulcs(tiszta_honap(s.get("elszamolasi_honap"))), int(s["id"])), reverse=True)
 
     szamla_idk = list(s["id"] for s in szurt_lista)
     osszes_tetel = supabase.table("szamla_tetelek").select("*").in_("szamla_id", szamla_idk).execute().data or list()
+
     netto_per_szamla = dict()
     fogyasztas_per_szamla = dict()
     fogyasztas_me_per_szamla = dict()
@@ -1425,32 +1420,38 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
             tartalek_m3_per_szamla[sid] = tartalek_m3_per_szamla.get(sid, 0.0) + menny
 
     for sid, m3_menny in tartalek_m3_per_szamla.items():
-        if fogyasztas_per_szamla.get(sid, 0.0) == 0.0 and m3_menny > 0:
+        if fogyasztas_per_szamla.get(sid, 0.0) == 0.0 and m3_menny != 0:
             fogyasztas_per_szamla[sid] = m3_menny
             fogyasztas_me_per_szamla[sid] = "m³"
-
 
     sorok = list()
     for s in szurt_lista:
         sid = s["id"]
-        s_netto = netto_per_szamla.get(sid, 0.0)
-        s_fogy = fogyasztas_per_szamla.get(sid, 0.0)
-        s_me = fogyasztas_me_per_szamla.get(sid, "kWh")
-        szumma_egysegar = f"{round(s_netto / s_fogy, 2):,.2f} Ft/{s_me}".replace(",", " ").replace(".", ",") if s_fogy > 0 else None
-        sorok.append({
-            "Számlaszám": s["szamlaszam"],
+        hid = s["felhasznalasi_hely_id"]
+        fogy_menny = fogyasztas_per_szamla.get(sid, 0.0)
+        fogy_me = fogyasztas_me_per_szamla.get(sid, "kWh")
+        netto_ossz = netto_per_szamla.get(sid, 0.0)
+        egysegar_str = f"{netto_ossz / fogy_menny:,.2f} Ft/{fogy_me}".replace(",", " ").replace(".", ",") if fogy_menny != 0 else None
+
+        sor_adat = {
+            "ID": sid,
+            "Számlaszám": s.get("szamlaszam", ""),
             "Elszámolási hónap": tiszta_honap(s.get("elszamolasi_honap")),
-            "Energiatípus": et_per_szamla[sid],
-            "Felhasználási hely": h_map.get(s["felhasznalasi_hely_id"], ""),
-            "Szolgáltató": sz_map.get(s["szolgaltato_id"], ""),
-            "Időszak kezdete": s["idoszak_tol"],
-            "Időszak vége": s["idoszak_ig"],
-            "Bruttó összeg (Ft)": int(round(float(s["szamlan_szereplo_brutto"]))),
-            "Szumma nettó egységár": szumma_egysegar,
-            "Státusz": s["ellenorzes_statusz"],
-            "PDF fájl": s["pdf_utvonal"]
-        })
-    return szurt_lista, pd.DataFrame(sorok), osszes_tetel, netto_per_szamla, fogyasztas_per_szamla, h_map, legutobbi_id
+            "Energiatípus": h_energia_map.get(hid, "Villamos energia"),
+            "Felhasználási hely": h_map.get(hid, "Ismeretlen"),
+            "Szolgáltató": s_map.get(s["szolgaltato_id"], "Ismeretlen"),
+            "Időszak kezdete": s.get("idoszak_tol", ""),
+            "Időszak vége": s.get("idoszak_ig", ""),
+            "Bruttó összeg (Ft)": int(round(float(s.get("szamlan_szereplo_brutto") or 0))),
+            "Szumma nettó egységár": egysegar_str,
+            "Státusz": s.get("ellenorzes_statusz", ""),
+            "PDF fájl": s.get("pdf_fajlnev") or ""
+        }
+        sorok.append(sor_adat)
+
+    df = pd.DataFrame(sorok)
+    return szurt_lista, df, osszes_tetel, netto_per_szamla, fogyasztas_per_szamla, h_map, s_map
+
 
 
 
