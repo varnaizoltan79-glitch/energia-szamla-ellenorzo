@@ -65,10 +65,11 @@ def honap_kulcs(cimke):
 
 @st.dialog("📄 Számla PDF előnézet")
 def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
-    st.markdown(
-        "<style>div[data-testid='stDialog'] div[role='dialog'] { width: 580px !important; max-width: 75vw !important; }</style>",
+        st.markdown(
+        "<style>div[data-testid='stDialog'] div[role='dialog'] { width: 660px !important; max-width: 85vw !important; }</style>",
         unsafe_allow_html=True
     )
+
     st.subheader(f"Számlaszám: {szamlaszam}")
     pdf_bytes = supabase.storage.from_("szamlak-pdf").download(pdf_utvonal)
     dok = fitz.open(stream=pdf_bytes, filetype="pdf")
