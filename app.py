@@ -66,23 +66,26 @@ def honap_kulcs(cimke):
 st.markdown(
     """
     <style>
-    div[role="dialog"], div[data-testid="stDialog"] {
-        width: 900px !important;
+    div[role="dialog"] {
+        width: 1050px !important;
         max-width: 92vw !important;
+    }
+    div[role="dialog"] [data-testid="stImage"] img {
+        width: 100% !important;
+        max-width: 100% !important;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-
-@st.dialog("📄 Számla PDF előnézet")
+@st.dialog("📄 Számla PDF előnézet", width="large")
 def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
     st.subheader(f"Számlaszám: {szamlaszam}")
     pdf_bytes = supabase.storage.from_("szamlak-pdf").download(pdf_utvonal)
     dok = fitz.open(stream=pdf_bytes, filetype="pdf")
     for idx, oldal in enumerate(dok):
-        kep = oldal.get_pixmap(dpi=130)
+        kep = oldal.get_pixmap(dpi=160)
         st.image(kep.tobytes("png"), caption=f"{idx + 1}. oldal", use_container_width=True)
     st.download_button("📥 PDF letöltése a gépre", data=pdf_bytes, file_name=pdf_utvonal, mime="application/pdf")
 
