@@ -179,7 +179,14 @@ def _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat):
             adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
 
         rendezett_szoveg = "\n".join(oldal_sorok)
-    m_br = re.search(r"Fizetendő\s*összesen[:\s]+([-−–]?\s*[\d\.\s\xa0]+,\d{2})\s*Ft", rendezett_szoveg) or re.search(r"Fizetendő\s*összesen[:\s]+([-−–]?\s*[\d\.\s\xa0]+,\d{2})\s*Ft", szoveg)
+    
+        rendezett_szoveg = "\n".join(oldal_sorok)
+    m_br = (
+        re.search(r"Fizetendő\s*összesen\s*:?\s*([-−–]?\s*[\d\.\s\xa0]+(?:,\d{2})?)\s*Ft", rendezett_szoveg)
+        or re.search(r"Fizetendő\s*összesen\s*:?\s*([-−–]?\s*[\d\.\s\xa0]+(?:,\d{2})?)\s*Ft", szoveg)
+        or re.search(r"Bruttó\s*érték\s*([-−–]?\s*[\d\.\s\xa0]+(?:,\d{2})?)\s*Ft", szoveg)
+        or re.search(r"Összesen\s*:?\s*[-−–]?\s*[\d\.\s\xa0]+,\d{2}\s+[-−–]?\s*[\d\.\s\xa0]+,\d{2}\s+([-−–]?\s*[\d\.\s\xa0]+,\d{2})", rendezett_szoveg)
+    )
     if m_br:
         br_val = _hu_szam(m_br.group(1))
         if br_val is not None:
@@ -1673,7 +1680,8 @@ def mutat_szamla_rogzites(user_id):
 
     br_kulcs = f"br_{form_kulcs}"
     br_forras = kiv_pod_info["brutto"] if kiv_pod_info else (pdf_adat["brutto"] if pdf_adat else 0)
-    alap_br_szoveg = f"{int(br_forras):,}".replace(",", " ") if br_forras > 0 else ""
+    alap_br_szoveg = f"{int(br_forras):,}".replace(",", " ") if br_forras != 0 else ""
+
     szamlan_brutto_str = c2.text_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=alap_br_szoveg, placeholder="pl. 6 648", key=br_kulcs, on_change=formaz_ezres, args=(br_kulcs,))
     br_szamjegyek = re.sub(r"\D", "", szamlan_brutto_str)
     szamlan_brutto = int(br_szamjegyek) if br_szamjegyek else 0
