@@ -1475,6 +1475,55 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
     return szurt_lista, df, osszes_tetel, netto_per_szamla, fogyasztas_per_szamla, h_map, s_map
 
 
+def _alkalmaz_oszlop_szuroket(df, szurt_lista, kulcs_prefix="rogz_col"):
+    oszlopok = [c for c in df.columns if c != "ID"]
+    if not oszlopok:
+        return df, szurt_lista
+
+    aktiv_szurok = dict()
+    with st.container(border=True):
+        st.caption("🔎 **Oszlopszűrők (intelligens keresővel – kattints bármelyik oszlopba és kezdj el gépelni):**")
+        sor1 = st.columns(6)
+        sor2 = st.columns(len(oszlopok) - 6) if len(oszlopok) > 6 else list()
+        osszes_cella = list(sor1) + list(sor2)
+
+        for idx, col in enumerate(oszlopok):
+            if col == "Bruttó összeg (Ft)":
+                egyedi_ertekek = sorted(list(set(int(v) for v in df[col].dropna())), reverse=True)
+                opcio_map = {ft_szoveg(v): v for v in egyedi_ertekek}
+                opciok = list(opcio_map.keys())
+                val = osszes_cella[idx].multiselect(col, opciok, placeholder="Keresés...", key=f"{kulcs_prefix}_{col}")
+                if val:
+                    aktiv_szurok[col] = set(opcio_map[x] for x in val)
+            else:
+                nyers_lista = [str(v) for v in df[col].tolist() if v is not None and str(v).strip() != "" and str(v) != "None"]
+                if col == "Elszámolási hónap":
+                    opciok = sorted(list(set(nyers_lista)), key=honap_kulcs, reverse=True)
+                else:
+                    opciok = sorted(list(set(nyers_lista)))
+                val = osszes_cella[idx].multiselect(col, opciok, placeholder="Keresés...", key=f"{kulcs_prefix}_{col}")
+                if val:
+                    aktiv_szurok[col] = set(val)
+
+        if aktiv_szurok:
+            if st.button("🧹 Oszlopszűrők törlése", key=f"{kulcs_prefix}_reset"):
+                for col in oszlopok:
+                    st.session_state[f"{kulcs_prefix}_{col}"] = list()
+                st.rerun()
+
+    if not aktiv_szurok:
+        return df, szurt_lista
+
+    szurt_df = df.copy()
+    for col, engedelyezett in aktiv_szurok.items():
+        if col == "Bruttó összeg (Ft)":
+            szurt_df = szurt_df[szurt_df[col].isin(engedelyezett)]
+        else:
+            szurt_df = szurt_df[szurt_df[col].astype(str).isin(engedelyezett)]
+
+    megmaradt_idk = set(int(x) for x in szurt_df["ID"].tolist())
+    uj_lista = [s for s in szurt_lista if int(s["id"]) in megmaradt_idk]
+    return szurt_df, uj_lista
 
 
 
