@@ -1467,7 +1467,8 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
             "Bruttó összeg (Ft)": int(round(float(s.get("szamlan_szereplo_brutto") or 0))),
             "Szumma nettó egységár": egysegar_str,
             "Státusz": s.get("ellenorzes_statusz", ""),
-            "PDF fájl": s.get("pdf_fajlnev") or ""
+            "PDF fájl": s.get("pdf_utvonal") or s.get("pdf_fajlnev") or ""
+
         }
         sorok.append(sor_adat)
 
