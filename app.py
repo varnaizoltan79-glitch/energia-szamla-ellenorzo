@@ -541,9 +541,10 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
     if m_k:
         adat["kelte"] = date(int(m_k.group(1)), int(m_k.group(2)), int(m_k.group(3)))
 
-    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4})\.\s*(\d{2})\.\d{2}", rendezett_szoveg, re.I)
+    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", rendezett_szoveg, re.I)
     if m_h:
         adat["hatarido"] = date(int(m_h.group(1)), int(m_h.group(2)), int(m_h.group(3)))
+
 
     for s in osszes_sor:
         m_br = re.search(r"Fizetendő\s*összeg(?:\s*összesen\s*\(Ft\))?\s*:?\s*([\d\.\s\xa0]+(?:,\d+)?)\s*(?:Ft)?\b", s, re.I)
