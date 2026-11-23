@@ -1694,7 +1694,7 @@ def mutat_rogzitett_szamlak():
                     st.session_state.pop("torles_megerosites_id", None)
                     st.rerun()
 
-        if kiv_szamla_id and szamla_obj:
+            if kiv_szamla_id and szamla_obj:
         szamla_tetelek = [t for t in osszes_tetel if int(t["szamla_id"]) == kiv_szamla_id]
         st.subheader(f"📋 Számla díjtételei ({szamla_obj.get('szamlaszam', '')})")
         if szamla_tetelek:
@@ -1711,11 +1711,6 @@ def mutat_rogzitett_szamlak():
                 for t in szamla_tetelek
             ]
             st.dataframe(pd.DataFrame(t_megj), use_container_width=True, hide_index=True)
-
-
-
-
-
 
 
 def mutat_kimutatasok():
