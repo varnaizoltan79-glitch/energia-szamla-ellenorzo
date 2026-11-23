@@ -1656,60 +1656,59 @@ def mutat_rogzitett_szamlak():
         elso_idx = next(iter(kiv_sorok), None)
         if elso_idx is not None and elso_idx < len(df):
             kiv_szamla_id = int(df.iloc[elso_idx]["ID"])
-    szamla_map_id = {int(s["id"]): s for s in szurt_lista}
-    if not kiv_szamla_id and szurt_lista:
-        kiv_szamla_id = int(next(iter(szurt_lista))["id"])
-
-    szamla_obj = szamla_map_id.get(kiv_szamla_id)
-    pdf_ut = (szamla_obj.get("pdf_utvonal") or szamla_obj.get("pdf_fajlnev")) if szamla_obj else None
-
-    with akcio_hely:
+    if kiv_szamla_id:
+        szamla_map_id = {int(s["id"]): s for s in szurt_lista}
+        szamla_obj = szamla_map_id.get(kiv_szamla_id)
         if szamla_obj:
-            c_info, c_pdf, c_torol = st.columns((3.2, 1.3, 1.3))
-            c_info.markdown(f"**🧾 Kijelölt számla:** `{szamla_obj.get('szamlaszam', '')}` — {h_map.get(szamla_obj.get('felhasznalasi_hely_id'), '')} ({ft_szoveg(szamla_obj.get('szamlan_szereplo_brutto') or 0)})")
-            if pdf_ut:
-                if c_pdf.button("📄 PDF nagy ablakban", type="primary", use_container_width=True, key=f"pdf_btn_{kiv_szamla_id}"):
-                    mutat_pdf_ablak(pdf_ut, szamla_obj.get("szamlaszam", ""))
-            else:
-                c_pdf.caption("Nincs csatolt PDF")
+            pdf_ut = szamla_obj.get("pdf_utvonal") or szamla_obj.get("pdf_fajlnev")
+            with akcio_hely:
+                c_info, c_pdf, c_torol = st.columns((3.2, 1.3, 1.3))
+                c_info.markdown(f"**🧾 Kijelölt számla:** `{szamla_obj.get('szamlaszam', '')}` — {h_map.get(szamla_obj.get('felhasznalasi_hely_id'), '')} ({ft_szoveg(szamla_obj.get('szamlan_szereplo_brutto') or 0)})")
+                if pdf_ut:
+                    if c_pdf.button("📄 PDF megnyitása", type="primary", use_container_width=True, key=f"pdf_btn_{kiv_szamla_id}"):
+                        mutat_pdf_ablak(pdf_ut, szamla_obj.get("szamlaszam", ""))
+                else:
+                    c_pdf.caption("Nincs csatolt PDF")
 
-            if c_torol.button("🗑️ Számla törlése", use_container_width=True, key=f"del_btn_{kiv_szamla_id}"):
-                st.session_state["torles_megerosites_id"] = kiv_szamla_id
+                if c_torol.button("🗑️ Számla törlése", use_container_width=True, key=f"del_btn_{kiv_szamla_id}"):
+                    st.session_state["torles_megerosites_id"] = kiv_szamla_id
 
-            if st.session_state.get("torles_megerosites_id") == kiv_szamla_id:
-                st.warning(f"⚠️ Biztosan törölni szeretnéd a(z) **{szamla_obj.get('szamlaszam', '')}** számlát és minden díjtételét?")
-                tc1, tc2, _ = st.columns((1.3, 1.2, 4))
-                if tc1.button("✅ Igen, végleges törlés", type="primary", key=f"del_yes_{kiv_szamla_id}"):
-                    supabase.table("szamla_tetelek").delete().eq("szamla_id", kiv_szamla_id).execute()
-                    supabase.table("szamlak").delete().eq("id", kiv_szamla_id).execute()
-                    if pdf_ut:
-                        try:
-                            supabase.storage.from_("szamlak-pdf").remove(list((pdf_ut,)))
-                        except Exception:
-                            pass
-                    st.session_state.pop("torles_megerosites_id", None)
-                    st.success("✅ Számla sikeresen törölve!")
-                    st.rerun()
-                if tc2.button("❌ Mégse", key=f"del_no_{kiv_szamla_id}"):
-                    st.session_state.pop("torles_megerosites_id", None)
-                    st.rerun()
-        if kiv_szamla_id and szamla_obj:
+                if st.session_state.get("torles_megerosites_id") == kiv_szamla_id:
+                    st.warning(f"⚠️ Biztosan törölni szeretnéd a(z) **{szamla_obj.get('szamlaszam', '')}** számlát és minden díjtételét?")
+                    tc1, tc2, _ = st.columns((1.3, 1.2, 4))
+                    if tc1.button("✅ Igen, végleges törlés", type="primary", key=f"del_yes_{kiv_szamla_id}"):
+                        supabase.table("szamla_tetelek").delete().eq("szamla_id", kiv_szamla_id).execute()
+                        supabase.table("szamlak").delete().eq("id", kiv_szamla_id).execute()
+                        if pdf_ut:
+                            try:
+                                supabase.storage.from_("szamlak-pdf").remove(list((pdf_ut,)))
+                            except Exception:
+                                pass
+                        st.session_state.pop("torles_megerosites_id", None)
+                        st.success("✅ Számla sikeresen törölve!")
+                        st.rerun()
+                    if tc2.button("❌ Mégse", key=f"del_no_{kiv_szamla_id}"):
+                        st.session_state.pop("torles_megerosites_id", None)
+                        st.rerun()
+
+            st.divider()
             szamla_tetelek = [t for t in osszes_tetel if int(t["szamla_id"]) == kiv_szamla_id]
             st.subheader(f"📋 Számla díjtételei ({szamla_obj.get('szamlaszam', '')})")
-        if szamla_tetelek:
-            t_megj = [
-                {
-                    "Megnevezés": t.get("megnevezes_eredeti", ""),
-                    "Mennyiség": float(t.get("mennyiseg") or 0),
-                    "Mértékegység": t.get("mertekegyseg", ""),
-                    "Nettó egységár (Ft)": float(t.get("egysegar_netto") or 0),
-                    "Nettó összeg (Ft)": int(round(float(t.get("szamitott_netto") or 0))),
-                    "ÁFA (%)": float(t.get("afa_kulcs") or 0),
-                    "Bruttó összeg (Ft)": int(round(float(t.get("szamitott_brutto") or 0)))
-                }
-                for t in szamla_tetelek
-            ]
-            st.dataframe(pd.DataFrame(t_megj), use_container_width=True, hide_index=True)
+            if szamla_tetelek:
+                t_megj = [
+                    {
+                        "Megnevezés": t.get("megnevezes_eredeti", ""),
+                        "Mennyiség": float(t.get("mennyiseg") or 0),
+                        "Mértékegység": t.get("mertekegyseg", ""),
+                        "Nettó egységár (Ft)": float(t.get("egysegar_netto") or 0),
+                        "Nettó összeg (Ft)": int(round(float(t.get("szamitott_netto") or 0))),
+                        "ÁFA (%)": float(t.get("afa_kulcs") or 0),
+                        "Bruttó összeg (Ft)": int(round(float(t.get("szamitott_brutto") or 0)))
+                    }
+                    for t in szamla_tetelek
+                ]
+                st.dataframe(pd.DataFrame(t_megj), use_container_width=True, hide_index=True)
+
 
             
 def mutat_kimutatasok():
