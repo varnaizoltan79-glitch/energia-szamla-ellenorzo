@@ -516,7 +516,7 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
     m_az_dhrt = re.search(r"(U\d{5,}\s*-\s*F\d{4,})", szoveg, re.I)
     m_hk = re.search(r"Hőközpont\s*azonosító\s*:?\s*([A-Z0-9:/-]+)", rendezett_szoveg, re.I)
     if m_az_dhrt:
-        adat["pod"] = re.sub(r"\s+", "", m_az_dhrt.group(1)).upper()
+        adat["pod"] = re.sub(r"\s*-\s*", " - ", m_az_dhrt.group(1).strip()).upper()
     elif m_az_nyir:
         adat["pod"] = m_az_nyir.group(1).strip()
     elif m_hk:
@@ -541,7 +541,7 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
     if m_k:
         adat["kelte"] = date(int(m_k.group(1)), int(m_k.group(2)), int(m_k.group(3)))
 
-    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", rendezett_szoveg, re.I)
+    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4})\.\s*(\d{2})\.\d{2}", rendezett_szoveg, re.I)
     if m_h:
         adat["hatarido"] = date(int(m_h.group(1)), int(m_h.group(2)), int(m_h.group(3)))
 
@@ -554,8 +554,9 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
                 break
 
     egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?"
+    szorzo_szam = r"\d+,\d{4}"
     me_minta = r"(kW|MW|GJ|db|lm3|m3|m³|kWh|MWh|hó)"
-    tetel_minta = re.compile(rf"(?:({egyes_szam})\s+)?({egyes_szam})\s*{me_minta}\s*({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?(?:\s+({egyes_szam}))?(?:\s+(27|5|18|0|AHK)\b)?")
+    tetel_minta = re.compile(rf"(?:({szorzo_szam})\s+)?({egyes_szam})\s*{me_minta}\s*({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?(?:\s+({egyes_szam}))?(?:\s+(27|5|18|0|AHK)\b)?")
 
     talalatok = list()
     kategoria = ""
@@ -602,11 +603,11 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
         afa_nyers = m.group(6)
         afa = 5.0 if not afa_nyers else (0.0 if afa_nyers == "AHK" else float(afa_nyers))
 
-        if ar is not None and netto_oszlop is not None and menny > 0:
+        if ar is not None and netto_oszlop is not None and menny != 0:
             if abs((menny * ar) - netto_oszlop) > 5.0:
                 ar = round(netto_oszlop / menny, 4)
 
-        if ar is not None and menny > 0:
+        if ar is not None and menny != 0:
             talalatok.append({"Megnevezés": nev, "Mennyiség": round(menny, 4), "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
     if talalatok:
