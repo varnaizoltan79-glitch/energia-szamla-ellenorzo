@@ -1571,9 +1571,10 @@ def mutat_szamla_rogzites(user_id):
     m2.metric("Számított Bruttó", ft_szoveg(ossz_brutto))
     m3.metric("Eltérés a számlától", ft_szoveg(elteres))
 
-    egyezik = (abs(elteres) <= Decimal("2")) and (len(tetelek) > 0) and (szamlan_brutto > 0) and datum_rendben
+    egyezik = (elteres == Decimal("0")) and (len(tetelek) > 0) and (szamlan_brutto > 0) and datum_rendben
     if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
-    if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha az összegek egyeznek és a dátumok helyesek.")
+    if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha az eltérés pontosan 0 Ft (írd be a különbséget a Bruttó díj kompenzáció sorba) és a dátumok helyesek.")
+
 
     mentes_fajl = fajl if (fajl and fajl.name.lower().endswith(".pdf")) else None
     gomb = st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary", disabled=not egyezik)
