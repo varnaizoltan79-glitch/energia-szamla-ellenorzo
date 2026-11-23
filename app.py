@@ -210,7 +210,7 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         pod_ig = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
 
     szam_minta = r"-?\d{1,3}(?:[ .]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
-    sor_re = re.compile(rf"(?:^(.+?)\s+)?(\d{{4}}\.\d{{2}}\.\d{{2}})\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+({szam_minta})\s*(kWh/h|kWh|m3|m³|MJ|GJ|HUF|Ft|db|hó)\s+(.+?)\s+({szam_minta})\s+(\d{{1,2}})\b")
+    sor_re = re.compile(rf"(\d{{4}}\.\d{{2}}\.\d{{2}})\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+({szam_minta})\s*(kWh/h|kWh|m3|m³|MJ|GJ|HUF|Ft|db|hó)\s+(.+?)\s+({szam_minta})\s+(\d{{1,2}})\b")
 
     talalatok = list()
     elozo_nev = ""
@@ -226,13 +226,16 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
                 elozo_nev = s_tisztitott.strip(" -–:|")
             continue
 
-        nev = (m.group(1) or elozo_nev or "Földgáz díjtétel").strip(" -–:|")
+        bal_nev = s_tisztitott[:m.start()].strip(" -–:|")
+        menny = _hu_szam(m.group(3))
+        me_nyers = m.group(4)
+        kozepso = m.group(5)
+        netto_oszlop = _hu_szam(m.group(6))
+        afa = float(m.group(7))
+
+        alap_cimke = "RHD kapacitásdíj*" if me_nyers == "kWh/h" else ("Földgáz díjtétel" if me_nyers == "kWh" else "Földgáz díjtétel")
+        nev = bal_nev or elozo_nev or alap_cimke
         elozo_nev = ""
-        menny = _hu_szam(m.group(4))
-        me_nyers = m.group(5)
-        kozepso = m.group(6)
-        netto_oszlop = _hu_szam(m.group(7))
-        afa = float(m.group(8))
 
         kozep_szamok = re.findall(szam_minta, kozepso)
         ar = _hu_szam(next(iter(kozep_szamok))) if kozep_szamok else None
