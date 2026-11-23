@@ -421,7 +421,7 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
             adat["brutto"] = int(round(br_val))
 
 
-    egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?"
+    egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?"
     me_minta = r"(m3|m³|hó|db|kWh|MWh)"
     tetel_minta = re.compile(rf"({egyes_szam})\s*{me_minta}\s+({egyes_szam})\s*Ft(?:/(?:hó|m3|m³|db|kWh|MWh))?\s+({egyes_szam})\s+(27|5|18|0|AHK)\b")
 
