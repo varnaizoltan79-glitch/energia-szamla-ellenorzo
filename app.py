@@ -1357,6 +1357,20 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
         st.info("Még nincs rögzített számla az adatbázisban.")
         return None, None, None, None, None, None, None
 
+    akt_uid = st.session_state.get("akt_user_id")
+    osszes_mutatasa = st.checkbox("🌐 Összes számla megjelenítése (nem csak a sajátjaim)", value=False, key=f"{kulcs_prefix}_osszes_mutat")
+    if not osszes_mutatasa and akt_uid is not None:
+        sajat_hely_idk = set(int(h["id"]) for h in get_helyek(int(akt_uid)))
+        szamlak_data = list(
+            s for s in szamlak_data
+            if int(s.get("felhasznalasi_hely_id") or 0) in sajat_hely_idk
+            or int(s.get("jovahagyta_energetikus_id") or 0) == int(akt_uid)
+        )
+        if not szamlak_data:
+            st.info("Nincs még hozzád tartozó rögzített számla. Pipáld be a fenti négyzetet a rendszerben lévő összes számla megtekintéséhez.")
+            return None, None, None, None, None, None, None
+
+
     fc1, fc2, fc3, fc4 = st.columns(4)
     energia_opciok = ["Összes"] + sorted(list(set(h_energia_map.values())))
     val_energia = fc1.selectbox("⚡ Energiatípus:", energia_opciok, key=f"{kulcs_prefix}_f_energia")
@@ -1847,7 +1861,9 @@ users_data = supabase.table("energetikusok").select("id, nev, szerepkor").eq("ak
 users_map = {u["nev"]: u for u in users_data}
 valasztott_nev = st.sidebar.selectbox("Belépett energetikus:", list(users_map.keys()))
 user_sor = users_map[valasztott_nev]
+st.session_state["akt_user_id"] = int(user_sor["id"])
 st.sidebar.info(f"Szerepkör: **{user_sor['szerepkor']}**")
+
 
 menu = st.sidebar.radio("Menü", list(("🧾 Számla ellenőrzés és feltöltés", "📑 Rögzített számlák", "📊 Kimutatások és Riportok", "🔄 Helyettesítések", "⚙️ Törzsadatok")), on_change=urit_urlap)
 if menu == "🧾 Számla ellenőrzés és feltöltés":
