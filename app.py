@@ -285,8 +285,120 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
 
     return {"pod": pod, "tol": pod_tol, "ig": pod_ig, "brutto": pod_brutto, "tetelek_df": tetelek_df}
 
+def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
+    blokk_szoveg = "\n".join(sorok)
+    m_pod = re.search(r"(39N[A-Z0-9]{10,})", blokk_szoveg)
+    pod = m_pod.group(1).strip() if m_pod else ""
+
+    pod_tol, pod_ig = alap_tol, alap_ig
+    m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\s+(\d{4}\.\d{2}\.\d{2})", blokk_szoveg)
+    if m_ido:
+        pod_tol = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
+        pod_ig = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
+
+    szam_minta = r"-?\d{1,3}(?:[ .]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
+    sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+({szam_minta})\s+([A-Za-z0-9/³]+)\s+({szam_minta})\s+(HUF/[A-Za-z0-9/³]+|%)\s+({szam_minta})\s+(\d{{1,2}})\s*$")
+
+    talalatok = list()
+    for s in sorok:
+        m = sor_re.match(s.strip())
+        if not m:
+            continue
+        nev = m.group(1).strip(" -–:|")
+        menny = _hu_szam(m.group(4))
+        me_nyers = m.group(5)
+        ar = _hu_szam(m.group(6))
+        ar_me = m.group(7)
+        netto_oszlop = _hu_szam(m.group(8))
+        afa = float(m.group(9))
+
+        if menny is None or ar is None:
+            continue
+
+        if ar_me == "%":
+            me = "%"
+            ar = round(ar / 100.0, 6)
+        else:
+            me = me_nyers.replace("m³", "m3")
+            if netto_oszlop is not None and menny != 0 and abs((menny * ar) - netto_oszlop) > 5.0:
+                ar = round(netto_oszlop / menny, 6)
+
+        talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
+
+    tetelek_df = pd.DataFrame(talalatok) if talalatok else None
+    pod_brutto = alap_brutto
+    if pod_brutto == 0 and tetelek_df is not None:
+        _, szam_br, _ = szamol_tetelek(tetelek_df)
+        pod_brutto = int(szam_br)
+
+    return {"pod": pod, "tol": pod_tol, "ig": pod_ig, "brutto": pod_brutto, "tetelek_df": tetelek_df}
+
+
+def _feldolgoz_mvm_gaz_pdf(dok, szoveg, adat):
+    adat["szolgaltato_kulcs"] = "MVM"
+    osszes_sor = list()
+    for oldal in dok:
+        osszes_sor.extend(_vizszintes_sorok(oldal))
+    rendezett_szoveg = "\n".join(osszes_sor)
+
+    m_sz = re.search(r"Számla\s*száma\s*:?\s*([A-Z0-9/-]{6,})", rendezett_szoveg, re.I)
+    if m_sz:
+        adat["szamlaszam"] = m_sz.group(1).strip()
+
+    m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
+    if m_k:
+        adat["kelte"] = datetime.strptime(m_k.group(1), "%Y.%m.%d").date()
+
+    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
+    if m_h:
+        adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
+
+    m_br = re.search(r"Fizetendő\s*:?\s*([\d\.\s\xa0]+(?:,\d+)?)\s*Ft", rendezett_szoveg, re.I)
+    if m_br:
+        br_val = _hu_szam(m_br.group(1))
+        if br_val:
+            adat["brutto"] = int(round(br_val))
+            adat["foszamla_brutto"] = adat["brutto"]
+
+    pod_indulo_sorok = list()
+    for idx, s in enumerate(osszes_sor):
+        if re.search(r"39N[A-Z0-9]{10,}", s):
+            pod_indulo_sorok.append(idx)
+
+    if len(pod_indulo_sorok) > 1:
+        pod_adatok = dict()
+        for i, start_idx in enumerate(pod_indulo_sorok):
+            end_idx = pod_indulo_sorok[i + 1] if (i + 1 < len(pod_indulo_sorok)) else len(osszes_sor)
+            resz = _feldolgoz_mvm_gaz_pod_blokk(osszes_sor[start_idx:end_idx], adat["tol"], adat["ig"], 0)
+            if resz["pod"] and resz["tetelek_df"] is not None:
+                pod_adatok[resz["pod"]] = resz
+        if pod_adatok:
+            adat["pod_adatok"] = pod_adatok
+            elso_pod = next(iter(pod_adatok.values()))
+            adat["pod"] = elso_pod["pod"]
+            adat["brutto"] = elso_pod["brutto"]
+            adat["tol"] = elso_pod["tol"]
+            adat["ig"] = elso_pod["ig"]
+            adat["tetelek_df"] = elso_pod["tetelek_df"]
+    else:
+        resz_sorok = osszes_sor[pod_indulo_sorok:] if pod_indulo_sorok else osszes_sor
+        resz = _feldolgoz_mvm_gaz_pod_blokk(resz_sorok, adat["tol"], adat["ig"], adat["brutto"])
+        if resz["pod"]:
+            adat["pod"] = resz["pod"]
+        if resz["tol"]:
+            adat["tol"] = resz["tol"]
+        if resz["ig"]:
+            adat["ig"] = resz["ig"]
+        if resz["tetelek_df"] is not None:
+            adat["tetelek_df"] = resz["tetelek_df"]
+
+    return adat
+
 
 def _feldolgoz_mvm_pdf(dok, szoveg, adat):
+    if "földgáz" in szoveg.lower() or re.search(r"\b39N[A-Z0-9]{10,}\b", szoveg):
+        return _feldolgoz_mvm_gaz_pdf(dok, szoveg, adat)
+    
     adat["szolgaltato_kulcs"] = "MVM"
     osszes_sor = list()
     for oldal in dok:
