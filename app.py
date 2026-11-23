@@ -66,16 +66,18 @@ def honap_kulcs(cimke):
 st.markdown(
     """
     <style>
-    div[data-testid="stDialog"] > div > div {
-        width: 800px !important;
-        max-width: 92vw !important;
+    div[data-testid="stDialog"] div[role="dialog"] {
+        width: 932px !important;
+        max-width: 90vw !important;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-@st.dialog("📄 Számla PDF előnézet", width="large")
+@st.dialog("📄 Számla PDF előnézet")
+def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
+
 def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
     st.subheader(f"Számlaszám: {szamlaszam}")
     pdf_bytes = supabase.storage.from_("szamlak-pdf").download(pdf_utvonal)
