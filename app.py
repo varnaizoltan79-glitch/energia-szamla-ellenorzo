@@ -67,7 +67,7 @@ st.markdown(
     """
     <style>
     div[role="dialog"] {
-        width: 1050px !important;
+        width: 950px !important;
         max-width: 92vw !important;
     }
     div[role="dialog"] [data-testid="stImage"] img {
