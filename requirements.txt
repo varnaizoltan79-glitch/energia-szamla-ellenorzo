@@ -6,3 +6,4 @@ pypdf
 supabase
 pdfplumber
 pymupdf
+streamlit-aggrid
