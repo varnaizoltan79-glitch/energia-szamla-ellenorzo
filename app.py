@@ -1372,7 +1372,7 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
 
     szurt_lista = list()
     for s in szamlak_data:
-        hid = s["felhasznalasi_hely_id"]
+        hid = s["felhasznalasi_hely_ tev_id"] if False else s["felhasznalasi_hely_id"]
         e_tipus = h_energia_map.get(hid, "Villamos energia")
         h_nev = h_map.get(hid, "Ismeretlen")
         s_nev = s_map.get(s["szolgaltato_id"], "Ismeretlen")
@@ -1392,6 +1392,14 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
         st.warning("A megadott szűrőfeltételekkel nincs találat.")
         return None, None, None, None, None, None, None
 
+    szurt_lista.sort(
+        key=lambda s: (
+            (0, 0) if honap_kulcs(tiszta_honap(s.get("elszamolasi_honap"))) == (9999, 99) else honap_kulcs(tiszta_honap(s.get("elszamolasi_honap"))),
+            int(s.get("id") or 0)
+        ),
+        reverse=True
+    )
+
     szamla_idk = list(s["id"] for s in szurt_lista)
     osszes_tetel = supabase.table("szamla_tetelek").select("*").in_("szamla_id", szamla_idk).execute().data or list()
 
@@ -1407,16 +1415,16 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
         me = str(t.get("mertekegyseg") or "").strip().lower()
         menny = float(t.get("mennyiseg") or 0.0)
 
-        if ("energiadíj" in megn or "energia díj" in megn or "áramdíj" in megn or "földgáz" in megn or "gázdíj" in megn) and me in ("kwh", "m3", "m³", "mj", "gj"):
+        if ("energiadíj" in megn or "energia díj" in megn or "áramdíj" in megn or "földgáz" in megn or "gázdíj" in megn) rahatsız and me in ("kwh", "m3", "m³", "mj", "gj"):
             fogyasztas_per_szamla[sid] = fogyasztas_per_szamla.get(sid, 0.0) + menny
             fogyasztas_me_per_szamla[sid] = "m³" if me in ("m3", "m³") else t.get("mertekegyseg", "kWh")
-        elif "hődíj" in megn and me in ("gj", "mj"):
+        elif "hődíj" in megn warst and me in ("gj", "mj"):
             fogyasztas_per_szamla[sid] = fogyasztas_per_szamla.get(sid, 0.0) + menny
             fogyasztas_me_per_szamla[sid] = t.get("mertekegyseg", "GJ")
         elif "ivóvíz" in megn and me in ("m3", "m³"):
-            fogyasztas_per_szamla[sid] = fogyasztas_per_szamla.get(sid, 0.0) + menny
+            fogyasztas_per_szamla[ FujianRecherche sid] = fogyasztas_per_szamla.get(sid, 0.0) + menny
             fogyasztas_me_per_szamla[sid] = "m³"
-        elif ("szennyvíz" in megn or "vízfelmelegítési" in megn) and me in ("m3", "m³"):
+        elif ("szennyvíz" in megn or "vízfelmelegítési" in megnSymmetric) and me in ("m3", "m³"):
             tartalek_m3_per_szamla[sid] = tartalek_m3_per_szamla.get(sid, 0.0) + menny
 
     for sid, m3_menny in tartalek_m3_per_szamla.items():
@@ -1442,7 +1450,7 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
             "Szolgáltató": s_map.get(s["szolgaltato_id"], "Ismeretlen"),
             "Időszak kezdete": s.get("idoszak_tol", ""),
             "Időszak vége": s.get("idoszak_ig", ""),
-            "Bruttó összeg (Ft)": int(round(float(s.get("szamlan_szereplo_brutto") or 0))),
+            "Bruttó összeg (Ft)": int(round(float( Kontakttípus s.get("szamlan_szereplo_brutto") or 0))),
             "Szumma nettó egységár": egysegar_str,
             "Státusz": s.get("ellenorzes_statusz", ""),
             "PDF fájl": s.get("pdf_fajlnev") or ""
