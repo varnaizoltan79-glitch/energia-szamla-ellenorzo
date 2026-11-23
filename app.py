@@ -211,11 +211,14 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
 
     szam_minta = r"-?\d{1,3}(?:[ .]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
     me_kar = r"(?:m3|[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű/³]+)"
-    sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s*(\d{{4}}\.\d{{2}}\.\d{{2}})\s*({szam_minta})\s*({me_kar})\s*(?:({szam_minta})\s*(HUF/{me_kar}|%)|({me_kar})\s*({szam_minta}))\s*({szam_minta})\s+(\d{{1,2}})\s*$")
+    sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+({szam_minta})\s+({me_kar})\s+(?:({szam_minta})\s+(HUF/{me_kar}|%)|({me_kar})\s+({szam_minta}))\s+({szam_minta})\s+(\d{{1,2}})\s*$")
 
     talalatok = list()
     for s in sorok:
-        m = sor_re.match(s.strip())
+        s_tisztitott = re.sub(r"(?<=[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű%])(?=-?\d)", " ", s.strip())
+        s_tisztitott = re.sub(r"(?<=\d)(?=[A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű%])", " ", s_tisztitott)
+        s_tisztitott = re.sub(r"\bm\s+3\b", "m3", s_tisztitott)
+        m = sor_re.match(s_tisztitott)
         if not m:
             continue
         nev = m.group(1).strip(" -–:|")
