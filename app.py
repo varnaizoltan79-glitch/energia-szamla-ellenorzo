@@ -77,8 +77,6 @@ st.markdown(
 
 @st.dialog("📄 Számla PDF előnézet")
 def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
-
-def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
     st.subheader(f"Számlaszám: {szamlaszam}")
     pdf_bytes = supabase.storage.from_("szamlak-pdf").download(pdf_utvonal)
     dok = fitz.open(stream=pdf_bytes, filetype="pdf")
