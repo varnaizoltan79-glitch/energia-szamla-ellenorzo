@@ -680,13 +680,24 @@ def szamol_tetelek(df):
     ossz_brutto = Decimal("0")
     tetelek = list()
     for _, row in df.iterrows():
+        megn_str = str(row.get("Megnevezés") or "").strip()
+        if megn_str == "Bruttó díj kompenzáció":
+            br_nyers = str(row.get("Bruttó összeg (Ft)") or "")
+            negativ = "-" in br_nyers
+            szamjegyek = re.sub(r"\D", "", br_nyers)
+            komp_ertek = (-int(szamjegyek) if negativ else int(szamjegyek)) if szamjegyek else 0
+            if komp_ertek != 0:
+                ossz_brutto += Decimal(komp_ertek)
+                tetelek.append({"megnevezes_eredeti": "Bruttó díj kompenzáció", "mennyiseg": 1.0, "mertekegyseg": "Ft", "egysegar_netto": 0.0, "szamitott_netto": 0.0, "afa_kulcs": 0.0, "szamitott_brutto": float(komp_ertek)})
+            continue
+
         m_val = row.get("Mennyiség")
         a_val = row.get("Nettó egységár")
         if m_val is None or a_val is None or pd.isna(m_val) or pd.isna(a_val):
             continue
         menny = Decimal(str(m_val))
         ar = Decimal(str(a_val))
-        if (menny == 0 and ar == 0) or (str(row.get("Megnevezés") or "").strip() == "Bruttó díj kompenzáció" and ar == 0):
+        if menny == 0 and ar == 0:
             continue
         afa_val = row.get("ÁFA (%)")
         afa = Decimal(str(afa_val)) if (afa_val is not None and not pd.isna(afa_val)) else Decimal("27.0")
@@ -694,7 +705,7 @@ def szamol_tetelek(df):
         brutto = (netto * (Decimal("1") + afa / Decimal("100"))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
         ossz_netto += netto
         ossz_brutto += brutto
-        tetelek.append({"megnevezes_eredeti": str(row.get("Megnevezés") or "Díjtétel"), "mennyiseg": float(menny), "mertekegyseg": str(row.get("Mértékegység") or "kWh"), "egysegar_netto": float(ar), "szamitott_netto": float(netto), "afa_kulcs": float(afa), "szamitott_brutto": float(brutto)})
+        tetelek.append({"megnevezes_eredeti": megn_str or "Díjtétel", "mennyiseg": float(menny), "mertekegyseg": str(row.get("Mértékegység") or "kWh"), "egysegar_netto": float(ar), "szamitott_netto": float(netto), "afa_kulcs": float(afa), "szamitott_brutto": float(brutto)})
     return ossz_netto, ossz_brutto, tetelek
 
 
@@ -1475,14 +1486,26 @@ def mutat_szamla_rogzites(user_id):
     elif fajl and fajl.name.lower().endswith(".csv"):
         alap_df = pd.read_csv(fajl)
 
-    komp_sor = pd.DataFrame([{"Megnevezés": "Bruttó díj kompenzáció", "Mennyiség": 1.0, "Mértékegység": "Ft", "Nettó egységár": 0.0, "ÁFA (%)": 0.0}])
+        komp_sor = pd.DataFrame([{"Megnevezés": "Bruttó díj kompenzáció", "Mennyiség": None, "Mértékegység": "Ft", "Nettó egységár": None, "ÁFA (%)": None}])
     alap_df = pd.concat([alap_df, komp_sor], ignore_index=True)
 
     def _frissit_tetel_osszegek(df_be):
         df_ki = df_be.copy()
         nettos = list()
         bruttos = list()
-        for _, sor in df_ki.iterrows():
+        for idx_r, sor in df_ki.iterrows():
+            if str(sor.get("Megnevezés") or "").strip() == "Bruttó díj kompenzáció":
+                df_ki.at[idx_r, "Mennyiség"] = None
+                df_ki.at[idx_r, "Nettó egységár"] = None
+                df_ki.at[idx_r, "ÁFA (%)"] = None
+                br_nyers = str(sor.get("Bruttó összeg (Ft)") or "")
+                negativ = "-" in br_nyers
+                szamjegyek = re.sub(r"\D", "", br_nyers)
+                komp_val = (-int(szamjegyek) if negativ else int(szamjegyek)) if szamjegyek else 0
+                nettos.append("")
+                bruttos.append(ft_szoveg(komp_val))
+                continue
+
             m_v = sor.get("Mennyiség")
             a_v = sor.get("Nettó egységár")
             if m_v is None or a_v is None or pd.isna(m_v) or pd.isna(a_v):
@@ -1509,7 +1532,7 @@ def mutat_szamla_rogzites(user_id):
         st.session_state[df_state_kulcs],
         num_rows="dynamic",
         use_container_width=True,
-        disabled=list(("Nettó összeg (Ft)", "Bruttó összeg (Ft)")),
+        disabled=list(("Nettó összeg (Ft)",)),
         key=f"ed_{form_kulcs}"
     )
 
