@@ -63,12 +63,20 @@ def honap_kulcs(cimke):
         return (int(m.group(1)), HONAPOK_HU.index(m.group(2)))
     return (9999, 99)
 
-@st.dialog("📄 Számla PDF előnézet")
+st.markdown(
+    """
+    <style>
+    div[data-testid="stDialog"] > div > div {
+        width: 1035px !important;
+        max-width: 92vw !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+@st.dialog("📄 Számla PDF előnézet", width="large")
 def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
-    st.markdown(
-        "<style>div[data-testid='stDialog'] div[role='dialog'] { width: 1035px !important; max-width: 92vw !important; }</style>",
-        unsafe_allow_html=True
-    )
     st.subheader(f"Számlaszám: {szamlaszam}")
     pdf_bytes = supabase.storage.from_("szamlak-pdf").download(pdf_utvonal)
     dok = fitz.open(stream=pdf_bytes, filetype="pdf")
