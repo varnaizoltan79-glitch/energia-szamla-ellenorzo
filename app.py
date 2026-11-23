@@ -1683,8 +1683,10 @@ def mutat_szamla_rogzites(user_id):
     alap_br_szoveg = f"{int(br_forras):,}".replace(",", " ") if br_forras != 0 else ""
 
     szamlan_brutto_str = c2.text_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=alap_br_szoveg, placeholder="pl. 6 648", key=br_kulcs, on_change=formaz_ezres, args=(br_kulcs,))
+    br_negativ = "-" in szamlan_brutto_str
     br_szamjegyek = re.sub(r"\D", "", szamlan_brutto_str)
-    szamlan_brutto = int(br_szamjegyek) if br_szamjegyek else 0
+    szamlan_brutto = (-int(br_szamjegyek) if br_negativ else int(br_szamjegyek)) if br_szamjegyek else 0
+
 
     kelte = pdf_adat["kelte"] if pdf_adat else date.today()
     hatarido = pdf_adat["hatarido"] if pdf_adat else date.today()
