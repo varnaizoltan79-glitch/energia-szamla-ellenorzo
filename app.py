@@ -744,10 +744,13 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
     if m_az:
         adat["pod"] = m_az.group(1).strip()
 
-    m_ido = re.search(r"Elszámolási\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–.]+\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
+    m_ido = re.search(r"Elszámol(?:ási|t)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–.]+\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
+    if not m_ido:
+        m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg)
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
+
 
     m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", rendezett_szoveg, re.I)
     if m_k:
@@ -789,7 +792,7 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
 
         m = tetel_minta.search(s)
         if not m:
-            tiszta_sor = re.sub(r"\d{4}\.\d{2}\.\d{2}\s*[-–]\s*\d{4}\.\d{2}\.\d{2}", "", s)
+            tiszta_sor = re.sub(r"\d{4}\.\d{2}\.\d{2}\s*[-–]?", "", s)
             tiszta_sor = re.sub(r"\b\d+\s*-\s*\d+\b", "", tiszta_sor).strip(" -–:|")
             if tiszta_sor and len(tiszta_sor) >= 5 and any(k in tiszta_sor.lower() for k in ("vízmérő", "részszámlában", "ivóvíz", "szennyvíz", "vízterhelési", "alapdíj", "díj")):
                 elozo_nev = f"{elozo_nev} {tiszta_sor}".strip()
