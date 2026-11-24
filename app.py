@@ -641,119 +641,89 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
     else:
         adat["szolgaltato_kulcs"] = "debreceni vízmű"
 
+    osszes_sor = list()
+    for oldal in dok:
+        osszes_sor.extend(_vizszintes_sorok(oldal))
+    rendezett_szoveg = "\n".join(osszes_sor)
 
-    m_sz = re.search(r"Számla\s*sorszáma\s*:?\s*([A-Z0-9/-]{6,})", szoveg, re.I)
+    m_sz = re.search(r"Számla\s*sorszáma\s*:?\s*([A-Z0-9/-]{6,})", rendezett_szoveg, re.I)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
 
-    m_hely_szam = re.search(r"Felhasználási\s*hely\s*száma\s*:?\s*(\d{6,})", szoveg, re.I)
-    m_az_per = re.search(r"azonosító\s*száma\s*:?\s*(\d{5,}/\d{6,})", szoveg, re.I)
-    m_az = re.search(r"Azonosító(?:\s*száma)?\s*:?\s*(\d{5,}(?:-\d{5,})?)", szoveg, re.I)
-    if m_hely_szam and not adat["pod"]:
-        nyers_hely = m_hely_szam.group(1).strip()
-        adat["pod"] = nyers_hely.lstrip("0") or nyers_hely
-    elif m_az_per and not adat["pod"]:
-        adat["pod"] = m_az_per.group(1).strip()
-    elif m_az and not adat["pod"]:
+    m_az = re.search(r"(?:Felhasználási\s*hely\s*azonosító|Azonosító)\s*:?\s*([0-9A-Z-]{6,})", rendezett_szoveg, re.I)
+    if m_az:
         adat["pod"] = m_az.group(1).strip()
 
-    m_ido = re.search(r"(?:Elszámolási|Elszámolt)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–.]+\s*(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
-    if not m_ido:
-        m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", szoveg)
+    m_ido = re.search(r"Elszámolási\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–.]+\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
 
-    m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", szoveg, re.I)
+    m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", rendezett_szoveg, re.I)
     if m_k:
         adat["kelte"] = date(int(m_k.group(1)), int(m_k.group(2)), int(m_k.group(3)))
 
-    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", szoveg, re.I)
+    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", rendezett_szoveg, re.I)
     if m_h:
         adat["hatarido"] = date(int(m_h.group(1)), int(m_h.group(2)), int(m_h.group(3)))
 
-    m_br_szla = re.search(r"Bruttó\s*számlaérték\s*összesen\*?\s*:?\s*([\d\.\s\xa0]+)\b", szoveg, re.I)
-    m_br = re.search(r"Fizetendő\s*összeg\s*:?\s*([\d\.\s\xa0]+)\s*Ft", szoveg, re.I)
-    if m_br_szla:
-        br_val = _hu_szam(m_br_szla.group(1))
-        if br_val:
-            adat["brutto"] = int(round(br_val))
-    elif m_br:
-        br_val = _hu_szam(m_br.group(1))
-        if br_val:
-            adat["brutto"] = int(round(br_val))
-
+    for s in osszes_sor:
+        m_br = re.search(r"Fizetendő\s*összeg\s*:?\s*(-?[\d\.\s\xa0]+(?:,\d+)?)\s*Ft\b", s, re.I)
+        if m_br:
+            br_val = _hu_szam(m_br.group(1))
+            if br_val is not None and br_val != 0:
+                adat["brutto"] = int(round(br_val))
+                break
 
     egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?"
-    me_minta = r"(m3|m³|hó|db|kWh|MWh)"
-    tetel_minta = re.compile(rf"({egyes_szam})\s*{me_minta}\s+({egyes_szam})\s*Ft(?:/(?:hó|m3|m³|db|kWh|MWh))?\s+({egyes_szam})\s+(27|5|18|0|AHK)\b")
+    me_minta = r"(m3|m³|hó|db|lm3)"
+    tetel_minta = re.compile(rf"({egyes_szam})\s*{me_minta}\s+({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?(?:\s+({egyes_szam}))?(?:\s+(27|5|18|0|AHK)\b)?")
 
     talalatok = list()
-    for oldal in dok:
-        oldal_szoveg = oldal.get_text("text") or ""
-        tiszta_fej = re.sub(r"\s+", "", oldal_szoveg.upper())
-        if "SZÁMLARÉSZLETEZŐ" not in tiszta_fej and "VÍZMÉRŐN" not in tiszta_fej:
+    elozo_nev = ""
+    for s in osszes_sor:
+        s_low = s.lower().strip()
+        if "bruttó számlaérték összesen" in s_low or "áfa összesítő" in s_low:
+            break
+
+        if (
+            s_low.startswith("fizetendő")
+            or s_low.startswith("kerekítés")
+            or "összesen" in s_low
+            or "tétel megnevezése" in s_low
+            or "számlarészletező" in s_low
+            or re.match(r"^\d+\s*/\s*\d+\.?\s*oldal", s_low)
+        ):
+            elozo_nev = ""
             continue
 
-        szavak = oldal.get_text("words")
-        if not szavak:
+        m = tetel_minta.search(s)
+        if not m:
+            tiszta_sor = re.sub(r"\d{4}\.\d{2}\.\d{2}\s*[-–]\s*\d{4}\.\d{2}\.\d{2}", "", s)
+            tiszta_sor = re.sub(r"\b\d+\s*-\s*\d+\b", "", tiszta_sor).strip(" -–:|")
+            if tiszta_sor and len(tiszta_sor) >= 5 and any(k in tiszta_sor.lower() for k in ("vízmérő", "részszámlában", "ivóvíz", "szennyvíz", "vízterhelési", "alapdíj", "díj")):
+                elozo_nev = f"{elozo_nev} {tiszta_sor}".strip()
             continue
 
-        jobb_szavak = list((x0, y0, szo) for x0, y0, _, _, szo, *_ in szavak if x0 >= 305.0)
-        if not jobb_szavak:
-            continue
+        bal_resz = s[:m.start()]
+        bal_resz = re.sub(r"\d{4}\.\d{2}\.\d{2}\s*[-–]\s*\d{4}\.\d{2}\.\d{2}", "", bal_resz)
+        bal_resz = re.sub(r"\b\d+\s*-\s*\d+\b", "", bal_resz).strip(" -–:|")
+        nev = f"{elozo_nev} {bal_resz}".strip() or "Víziközmű díjtétel"
+        elozo_nev = ""
 
-        rendezett = sorted(jobb_szavak, key=_rendez_yx_szo)
-        _, akt_y, _ = next(iter(rendezett))
-        akt_szavak = list()
-        sorok_y = list()
-        for x0, y0, szo in rendezett:
-            if abs(y0 - akt_y) <= 3.5:
-                akt_szavak.append((x0, szo))
-            else:
-                akt_szavak.sort(key=_rendez_x_szo)
-                sorok_y.append((akt_y, " ".join(sszo for _, sszo in akt_szavak)))
-                akt_y = y0
-                akt_szavak = [(x0, szo)]
-        if akt_szavak:
-            akt_szavak.sort(key=_rendez_x_szo)
-            sorok_y.append((akt_y, " ".join(sszo for _, sszo in akt_szavak)))
+        menny = _hu_szam(m.group(1))
+        me = m.group(2).replace("m³", "m3")
+        ar = _hu_szam(m.group(3))
+        afa_nyers = m.group(5)
+        afa = 27.0 if not afa_nyers else (0.0 if afa_nyers == "AHK" else float(afa_nyers))
 
-        horgonyok = list()
-        for y_val, sor_sz in sorok_y:
-            m = tetel_minta.search(sor_sz)
-            if m:
-                menny = _hu_szam(m.group(1))
-                me = m.group(2).replace("m³", "m3")
-                ar = _hu_szam(m.group(3))
-                afa_nyers = m.group(5)
-                afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
-                horgonyok.append({"y": y_val, "menny": menny, "me": me, "ar": ar, "afa": afa, "szavak": list()})
-
-        if not horgonyok:
-            continue
-
-        horgonyok.sort(key=lambda h: h["y"])
-        for idx_h, h in enumerate(horgonyok):
-            felso_hatar = h["y"] - 8.0
-            also_hatar = (horgonyok[idx_h + 1]["y"] - 6.0) if (idx_h + 1 < len(horgonyok)) else (h["y"] + 20.0)
-            for x0, y0, _, _, szo, *_ in szavak:
-                if x0 > 182.0:
-                    continue
-                if re.match(r"^\d{4}\.\d{2}\.\d{2}\.?-?$", szo.strip()):
-                    continue
-                if felso_hatar <= y0 < also_hatar:
-                    h["szavak"].append((round(y0 / 4.0), x0, szo))
-
-        for h in horgonyok:
-            h["szavak"].sort(key=_rendez_sor_x_szo)
-            nev = " ".join(s for _, _, s in h["szavak"]).replace("- ", "-").strip() or "Víziközmű díjtétel"
-            if h["menny"] is not None and h["ar"] is not None:
-                talalatok.append({"Megnevezés": nev, "Mennyiség": h["menny"], "Mértékegység": h["me"], "Nettó egységár": h["ar"], "ÁFA (%)": h["afa"]})
+        if menny is not None and ar is not None:
+            talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
+
 
 def _rendez_tavho_szo(w):
     x0, y0, *_ = w
