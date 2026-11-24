@@ -1643,7 +1643,7 @@ def mutat_rogzitett_szamlak():
 
     akcio_hely = st.container()
 
-    if aggrid_aktiv:
+        if aggrid_aktiv:
         gb = GridOptionsBuilder.from_dataframe(df)
         gb.configure_default_column(
             filter=True,
@@ -1660,7 +1660,7 @@ def mutat_rogzitett_szamlak():
             type=["numericColumn"],
             valueFormatter=JsCode("function(params) { return params.value != null ? Number(params.value).toLocaleString('hu-HU') + ' Ft' : ''; }")
         )
-                gb.configure_selection(selection_mode="single", use_checkbox=True)
+        gb.configure_selection(selection_mode="single", use_checkbox=True)
 
         frissit_osszesen_js = JsCode("""
         function(params) {
@@ -1703,6 +1703,7 @@ def mutat_rogzitett_szamlak():
             }}
             """)
         )
+
 
 
         grid_valasz = AgGrid(
