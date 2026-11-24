@@ -544,6 +544,11 @@ def _feldolgoz_mvm_gaz_pdf(dok, szoveg, adat):
 
     return adat
 
+    else:
+        resz_sorok = osszes_sor[pod_indulo_sorok[0]:] if pod_indulo_sorok else osszes_sor
+        resz = _feldolgoz_mvm_pod_blokk(resz_sorok, adat["tol"], adat["ig"], adat["brutto"])
+
+
 
 def _feldolgoz_mvm_pdf(dok, szoveg, adat):
     if "földgáz" in szoveg.lower() or re.search(r"\b39N[A-Z0-9]{10,}\b", szoveg):
