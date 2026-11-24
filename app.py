@@ -1615,6 +1615,9 @@ def mutat_rogzitett_szamlak():
         return
 
     ossz_brutto = int(df["Bruttó összeg (Ft)"].sum())
+    utolso_res = supabase.table("szamlak").select("id").order("id", desc=True).limit(1).execute().data or list()
+    utolso_id = int(next(iter(utolso_res), {}).get("id") or -1)
+
     osszesen_sor = {
         "ID": -1,
         "Számlaszám": "ÖSSZESEN",
@@ -1686,11 +1689,21 @@ def mutat_rogzitett_szamlak():
         }
         """)
 
-        gb.configure_grid_options(
+            gb.configure_grid_options(
             pinnedBottomRowData=[osszesen_sor],
             onFilterChanged=frissit_osszesen_js,
-            getRowStyle=JsCode("function(params) { if (params.node.rowPinned) { return {'font-weight': 'bold', 'background-color': '#f0f2f6'}; } }")
+            getRowStyle=JsCode(f"""
+            function(params) {{
+                if (params.node.rowPinned) {{
+                    return {{'font-weight': 'bold', 'background-color': '#f0f2f6'}};
+                }}
+                if (params.data && Number(params.data.ID) === {utolso_id}) {{
+                    return {{'background-color': '#d4edda', 'color': '#155724', 'font-weight': 'bold'}};
+                }}
+            }}
+            """)
         )
+
 
         grid_valasz = AgGrid(
             df,
