@@ -600,10 +600,10 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         if s_low.startswith("összesen") and idx > 0:
             kornyezet = " ".join(sorok[max(0, idx - 4):idx]).lower()
             if "áfa szerinti bontás" in kornyezet or "adóval növelt" in kornyezet:
-                szamok = re.findall(r"\d{1,3}(?: \d{3})+|\d+", s)
+                szamok = re.findall(r"-?\d{1,3}(?: \d{3})+|-?\d+", s)
                 if szamok:
                     val_b = _hu_szam(szamok[-1])
-                    if val_b and val_b > 0:
+                    if val_b is not None and val_b != 0:
                         pod_brutto = int(round(val_b))
             continue
 
