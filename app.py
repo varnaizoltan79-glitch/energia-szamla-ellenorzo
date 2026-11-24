@@ -1660,7 +1660,7 @@ def mutat_rogzitett_szamlak():
             type=["numericColumn"],
             valueFormatter=JsCode("function(params) { return params.value != null ? Number(params.value).toLocaleString('hu-HU') + ' Ft' : ''; }")
         )
-        gb.configure_selection(selection_mode="single", use_checkbox=True)
+                gb.configure_selection(selection_mode="single", use_checkbox=True)
 
         frissit_osszesen_js = JsCode("""
         function(params) {
@@ -1689,7 +1689,7 @@ def mutat_rogzitett_szamlak():
         }
         """)
 
-            gb.configure_grid_options(
+        gb.configure_grid_options(
             pinnedBottomRowData=[osszesen_sor],
             onFilterChanged=frissit_osszesen_js,
             getRowStyle=JsCode(f"""
