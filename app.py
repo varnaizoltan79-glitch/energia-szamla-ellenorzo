@@ -606,7 +606,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
             adat["ig"] = elso_pod["ig"]
             adat["tetelek_df"] = elso_pod["tetelek_df"]
     else:
-        resz_sorok = osszes_sor[pod_indulo_sorok:] if pod_indulo_sorok else osszes_sor
+        resz_sorok = osszes_sor[pod_indulo_sorok[0]:] if pod_indulo_sorok else osszes_sor
         resz = _feldolgoz_mvm_pod_blokk(resz_sorok, adat["tol"], adat["ig"], adat["brutto"])
         if resz["pod"]:
             adat["pod"] = resz["pod"]
@@ -616,6 +616,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
             adat["brutto"] = resz["brutto"]
 
     return adat
+
 
 
 
