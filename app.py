@@ -546,6 +546,94 @@ def _feldolgoz_mvm_gaz_pdf(dok, szoveg, adat):
 
     
 
+def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
+    blokk_szoveg = "\n".join(sorok)
+    m_pod = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", blokk_szoveg)
+    pod = m_pod.group(1).strip() if m_pod else ""
+
+    pod_tol, pod_ig = alap_tol, alap_ig
+    m_ido = re.search(r"Elszámolt\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", blokk_szoveg, re.I)
+    if m_ido:
+        pod_tol = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
+        pod_ig = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
+
+    szam_minta = r"-?\d{1,3}(?:[ .]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
+    sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s*[-–]\s*(\d{{4}}\.\d{{2}}\.\d{{2}})\s*({szam_minta})\s+({szam_minta})(?:\s+(KIF\d+|KÖF|NAF|A\d+|B\d+))?\s+({szam_minta})\s*$")
+    kizaro_eleje = ("összesen", "kereskedelmi díjak", "pénzeszközök", "közvetített szolgáltatás", "megnevezés", "áfa szerinti bontás", "mérő gyári", "mért időszak", "szerződésszám", "mérési pont", "fogyasztási hely", "telephelyre vonatkozó", "oldalak száma")
+
+    akt_me = "kWh"
+    akt_afa = 27.0
+    talalatok = list()
+    pod_brutto = 0
+
+    for idx, s in enumerate(sorok):
+        s_low = s.lower().strip()
+        if "kereskedelmi díjak" in s_low:
+            akt_me = "kWh"
+            akt_afa = 27.0
+            continue
+        elif "pénzeszközök" in s_low or "adóalapon kívüli" in s_low:
+            akt_me = "kWh"
+            akt_afa = 0.0
+            continue
+        elif "mennyiség (kvarh)" in s_low:
+            akt_me = "kVArh"
+            akt_afa = 27.0
+            continue
+        elif "mennyiség (csatl" in s_low or "csatl.pont/db" in s_low:
+            akt_me = "db"
+            akt_afa = 27.0
+            continue
+        elif "mennyiség (kw)" in s_low:
+            akt_me = "kW"
+            akt_afa = 27.0
+            continue
+        elif "ellenérték alap" in s_low and "mérték" in s_low:
+            akt_me = "%"
+            akt_afa = 27.0
+            continue
+        elif "mennyiség (kwh)" in s_low or "közvetített szolgáltatás" in s_low:
+            akt_me = "kWh"
+            akt_afa = 27.0
+            continue
+
+        if s_low.startswith("összesen") and idx > 0:
+            kornyezet = " ".join(sorok[max(0, idx - 4):idx]).lower()
+            if "áfa szerinti bontás" in kornyezet or "adóval növelt" in kornyezet:
+                szamok = re.findall(r"\d{1,3}(?: \d{3})+|\d+", s)
+                if szamok:
+                    val_b = _hu_szam(szamok[-1])
+                    if val_b and val_b > 0:
+                        pod_brutto = int(round(val_b))
+            continue
+
+        if any(s_low.startswith(kz) for kz in kizaro_eleje):
+            continue
+
+        s_tiszta = re.sub(r"(\d{4}\.\d{2}\.\d{2}\s*[-–]\s*\d{4}\.\d{2}\.\d{2})(?=\d)", r"\1 ", s.strip())
+        m = sor_re.match(s_tiszta)
+        if not m:
+            continue
+
+        nev = m.group(1).strip(" -–:|")
+        menny = _hu_szam(m.group(4))
+        ar = _hu_szam(m.group(5))
+        if menny is None or ar is None:
+            continue
+
+        if akt_me == "%":
+            ar = round(ar / 100.0, 6)
+
+        talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": akt_me, "Nettó egységár": ar, "ÁFA (%)": akt_afa})
+
+    tetelek_df = pd.DataFrame(talalatok) if talalatok else None
+    if pod_brutto == 0 and tetelek_df is not None:
+        _, szam_br, _ = szamol_tetelek(tetelek_df)
+        pod_brutto = int(szam_br) if szam_br > 0 else alap_brutto
+
+    return {"pod": pod, "tol": pod_tol, "ig": pod_ig, "brutto": pod_brutto, "tetelek_df": tetelek_df}
+
+
 def _feldolgoz_mvm_pdf(dok, szoveg, adat):
     if "földgáz" in szoveg.lower() or re.search(r"\b39N[A-Z0-9]{10,}\b", szoveg):
         return _feldolgoz_mvm_gaz_pdf(dok, szoveg, adat)
@@ -612,6 +700,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
             adat["brutto"] = resz["brutto"]
 
     return adat
+
 
 
 
