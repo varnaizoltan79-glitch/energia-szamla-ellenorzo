@@ -1643,7 +1643,7 @@ def mutat_rogzitett_szamlak():
 
     akcio_hely = st.container()
 
-        if aggrid_aktiv:
+    if aggrid_aktiv:
         gb = GridOptionsBuilder.from_dataframe(df)
         gb.configure_default_column(
             filter=True,
@@ -1704,8 +1704,6 @@ def mutat_rogzitett_szamlak():
             """)
         )
 
-
-
         grid_valasz = AgGrid(
             df,
             gridOptions=gb.build(),
@@ -1716,7 +1714,6 @@ def mutat_rogzitett_szamlak():
             height=450,
             key="rogzitett_szamlak_aggrid"
         )
-
         sel = getattr(grid_valasz, "selected_rows", None)
         if sel is None and isinstance(grid_valasz, dict):
             sel = grid_valasz.get("selected_rows")
@@ -1732,13 +1729,15 @@ def mutat_rogzitett_szamlak():
     else:
         df_megjelenit = pd.concat([df, pd.DataFrame([osszesen_sor])], ignore_index=True)
 
-        def _szinez_utolso(sor):
+        def _szinez_sorok(sor):
             if str(sor.get("Számlaszám")) == "ÖSSZESEN":
                 return ["font-weight: bold; background-color: #f0f2f6"] * len(sor)
+            if int(sor.get("ID") or -1) == utolso_id:
+                return ["background-color: #d4edda; color: #155724; font-weight: bold"] * len(sor)
             return [""] * len(sor)
 
         esemeny = st.dataframe(
-            df_megjelenit.style.apply(_szinez_utolso, axis=1),
+            df_megjelenit.style.apply(_szinez_sorok, axis=1),
             use_container_width=True,
             hide_index=True,
             on_select="rerun",
@@ -1750,6 +1749,7 @@ def mutat_rogzitett_szamlak():
         elso_idx = next(iter(kiv_sorok), None)
         if elso_idx is not None and elso_idx < len(df):
             kiv_szamla_id = int(df.iloc[elso_idx]["ID"])
+
     if kiv_szamla_id:
         szamla_map_id = {int(s["id"]): s for s in szurt_lista}
         szamla_obj = szamla_map_id.get(kiv_szamla_id)
