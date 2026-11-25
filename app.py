@@ -2129,19 +2129,30 @@ def mutat_szamla_rogzites(user_id):
         df_ki["Bruttó összeg (Ft)"] = bruttos
         return df_ki
 
-    df_state_kulcs = f"tetel_tabla_{form_kulcs}"
+        df_state_kulcs = f"tetel_tabla_{form_kulcs}"
     if df_state_kulcs not in st.session_state:
         st.session_state[df_state_kulcs] = _frissit_tetel_osszegek(alap_df)
     else:
         st.session_state[df_state_kulcs] = _frissit_tetel_osszegek(st.session_state[df_state_kulcs])
 
+    if st.button("➕ Új díjtétel sor", key=f"add_row_{form_kulcs}"):
+        uj_sor = pd.DataFrame([{"Megnevezés": "Új díjtétel", "Mennyiség": 0.0, "Mértékegység": "kWh", "Nettó egységár": 0.0, "ÁFA (%)": 27.0}])
+        st.session_state[df_state_kulcs] = _frissit_tetel_osszegek(pd.concat([st.session_state[df_state_kulcs], uj_sor], ignore_index=True))
+        st.rerun()
+
+    def _stilus_osszesen_sor(sor):
+        if str(sor.get("Megnevezés") or "").strip() == "ÖSSZESEN":
+            return ["font-weight: bold; background-color: #e6f3ff; color: #0b3d91"] * len(sor)
+        return [""] * len(sor)
+
     szerk_df = st.data_editor(
-        st.session_state[df_state_kulcs],
-        num_rows="dynamic",
+        st.session_state[df_state_kulcs].style.apply(_stilus_osszesen_sor, axis=1),
+        num_rows="fixed",
         use_container_width=True,
         disabled=list(("Nettó összeg (Ft)",)),
         key=f"ed_{form_kulcs}"
     )
+
 
     ujraszamolt_df = _frissit_tetel_osszegek(szerk_df)
     regi_parok = list(zip(
