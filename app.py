@@ -850,6 +850,7 @@ def _rendez_tavho_szo(w):
     return (y0, x0)
 
 def _feldolgoz_tavho_pdf(dok, szoveg, adat):
+    import calendar
     szoveg_low = szoveg.lower()
     is_nyirtavho = ("nyírtávhő" in szoveg_low or "nyíregyházi távhő" in szoveg_low or "11241256" in szoveg_low)
     adat["szolgaltato_kulcs"] = "nyírtávhő" if is_nyirtavho else "debreceni hőszolgáltató"
@@ -880,6 +881,13 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
         if m_ido2:
             adat["tol"] = datetime.strptime(f"20{m_ido2.group(1)}", "%Y.%m.%d").date()
             adat["ig"] = datetime.strptime(f"20{m_ido2.group(2)}", "%Y.%m.%d").date()
+        else:
+            m_ho = re.search(r"Elszámol(?:ási|t)\s*időszak\s*:?\s*(\d{4})\.(\d{2})(?!\.\d)", teljes_kereso, re.I)
+            if m_ho:
+                ev, ho = int(m_ho.group(1)), int(m_ho.group(2))
+                utolso_nap = calendar.monthrange(ev, ho)
+                adat["tol"] = date(ev, ho, 1)
+                adat["ig"] = date(ev, ho, utolso_nap)
 
     m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4}\.\d{2}\.\d{2})", teljes_kereso, re.I)
     if m_k:
@@ -896,7 +904,7 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
             adat["brutto"] = int(round(br_val))
 
     egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?"
-    tetel_minta = re.compile(rf"({egyes_szam})\s*(kW|GJ|MJ|m3|m³|hó|db)\s+({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?(?:\s+({egyes_szam}))?(?:\s+(5|27|18|0|AHK)\b)?")
+    tetel_minta = re.compile(rf"({egyes_szam})\s*(MW|kW|MWh|kWh|GJ|MJ|m3|m³|hó|db)\s+({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?(?:\s+({egyes_szam}))?(?:\s+(5|27|18|0|AHK)\b)?")
 
     talalatok = list()
     akt_szekcio = ""
@@ -919,7 +927,8 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
             continue
 
         bal_resz = re.sub(r"\d{4}\.\d{2}\.\d{2}\.?\s*[-–]?\s*(?:\d{4}\.\d{2}\.\d{2}\.?)?", "", s[:m.start()])
-        bal_resz = re.sub(r"\b\d+[.,]\d{4}\b", "", bal_resz).strip(" -–:|")
+        bal_resz = re.sub(r"\b\d{4}\.\d{2}\s*hó\b", "", bal_resz, flags=re.I)
+        bal_resz = re.sub(r"\b\d+[.,]\d{2,4}\b", "", bal_resz).strip(" -–:|")
         nev = f"{akt_szekcio} - {bal_resz}".strip(" -") if (akt_szekcio and bal_resz) else (bal_resz or "Távhő díjtétel")
 
         menny = _hu_szam(m.group(1))
@@ -929,7 +938,7 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
         if afa_nyers:
             afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
         else:
-            afa = 5.0 if me in ("kW", "GJ", "MJ") else 27.0
+            afa = 5.0 if me in ("MW", "kW", "MWh", "kWh", "GJ", "MJ") else 27.0
 
         if menny is not None and ar is not None:
             talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
