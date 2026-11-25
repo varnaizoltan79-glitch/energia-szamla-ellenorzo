@@ -664,14 +664,20 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
     if m_h:
         adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
 
-    m_br = re.search(r"Fizetendő\s*:?\s*(-?[\d\.\s\xa0]+(?:,\d+)?)\s*Ft", rendezett_szoveg, re.I)
-    if not m_br:
-        m_br = re.search(r"Számla\s*végösszege\s+(-?[\d\.\s\xa0]+)\s+-?[\d\.\s\xa0]+\s+(-?[\d\.\s\xa0]+)", rendezett_szoveg, re.I)
-        if m_br:
-            br_val = _hu_szam(m_br.group(3))
-            if br_val:
+        m_br = re.search(r"Fizetendő\s*:?\s*(-?[\d\.\s\xa0]+(?:,\d+)?)\s*Ft", rendezett_szoveg, re.I)
+    if m_br:
+        br_val = _hu_szam(m_br.group(1))
+        if br_val is not None and br_val != 0:
+            adat["brutto"] = int(round(br_val))
+            adat["foszamla_brutto"] = adat["brutto"]
+    else:
+        m_veg = re.search(r"Számla\s*végösszege\s+(-?[\d\.\s\xa0]+)\s+(-?[\d\.\s\xa0]+)\s+(-?[\d\.\s\xa0]+)", rendezett_szoveg, re.I)
+        if m_veg:
+            br_val = _hu_szam(m_veg.group(3))
+            if br_val is not None and br_val != 0:
                 adat["brutto"] = int(round(br_val))
                 adat["foszamla_brutto"] = adat["brutto"]
+
     else:
         br_val = _hu_szam(m_br.group(1))
         if br_val:
