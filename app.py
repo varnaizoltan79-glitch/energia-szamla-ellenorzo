@@ -850,53 +850,36 @@ def _rendez_tavho_szo(w):
     return (y0, x0)
 
 def _feldolgoz_tavho_pdf(dok, szoveg, adat):
-    szoveg_low = szoveg.lower()
-    if "nyírtávhő" in szoveg_low or "nyíregyházi távhő" in szoveg_low or "11241256" in szoveg_low or "nyirtavho" in szoveg_low:
-        adat["szolgaltato_kulcs"] = "nyírtávhő"
-    else:
-        adat["szolgaltato_kulcs"] = "debreceni hőszolgáltató"
-
+    adat["szolgaltato_kulcs"] = "debreceni hőszolgáltató"
     osszes_sor = list()
     for oldal in dok:
         osszes_sor.extend(_vizszintes_sorok(oldal))
     rendezett_szoveg = "\n".join(osszes_sor)
+    teljes_kereso = f"{szoveg}\n{rendezett_szoveg}"
 
-    m_sz = re.search(r"Számla\s*sorszáma\s*:?\s*([A-Z0-9/-]{5,})", rendezett_szoveg, re.I)
+    m_sz = re.search(r"Számla\s*sorszáma\s*:?\s*([A-Z0-9/-]{6,})", teljes_kereso, re.I)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
 
-    m_az_nyir = re.search(r"Felhasználó\s*azonosító\s*száma\s*:?\s*([A-Z0-9]{4,})\b", rendezett_szoveg, re.I)
-    m_az_dhrt = re.search(r"(U\d{5,}\s*-\s*F\d{4,})", szoveg, re.I)
-    m_hk = re.search(r"Hőközpont\s*azonosító\s*:?\s*([A-Z0-9:/-]+)", rendezett_szoveg, re.I)
-    if m_az_dhrt:
-        adat["pod"] = re.sub(r"\s*-\s*", " - ", m_az_dhrt.group(1).strip()).upper()
-    elif m_az_nyir:
-        adat["pod"] = m_az_nyir.group(1).strip()
-    elif m_hk:
+    m_hk = re.search(r"Hőközpont\s*azonosító\s*:?\s*([A-Z0-9-]+)", teljes_kereso, re.I)
+    m_az = re.search(r"Felhasználó\s*azonosító\s*száma\s*:?\s*([A-Z0-9-]+)", teljes_kereso, re.I)
+    if m_hk:
         adat["pod"] = m_hk.group(1).strip()
+    elif m_az:
+        adat["pod"] = m_az.group(1).strip()
 
-    m_ido_teljes = re.search(r"(?:Elszámolási|Elszámolt)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–.]+\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
-    m_ido_rovid = re.search(r"(?:Elszámolási|Elszámolt)\s*időszak\s*:?\s*(\d{2})\.(\d{2})\.(\d{2})\s*[-–.]+\s*(\d{2})\.(\d{2})\.(\d{2})", rendezett_szoveg, re.I)
-    m_ido_ho = re.search(r"(?:Elszámolási|Elszámolt)\s*időszak\s*:?\s*(\d{4})\.(\d{2})(?!\.\d)", rendezett_szoveg, re.I)
-    if m_ido_teljes:
-        adat["tol"] = datetime.strptime(m_ido_teljes.group(1), "%Y.%m.%d").date()
-        adat["ig"] = datetime.strptime(m_ido_teljes.group(2), "%Y.%m.%d").date()
-    elif m_ido_rovid:
-        adat["tol"] = date(2000 + int(m_ido_rovid.group(1)), int(m_ido_rovid.group(2)), int(m_ido_rovid.group(3)))
-        adat["ig"] = date(2000 + int(m_ido_rovid.group(4)), int(m_ido_rovid.group(5)), int(m_ido_rovid.group(6)))
-    elif m_ido_ho:
-        ev_h, ho_h = int(m_ido_ho.group(1)), int(m_ido_ho.group(2))
-        utolso_nap = 31 if ho_h in (1, 3, 5, 7, 8, 10, 12) else (30 if ho_h in (4, 6, 9, 11) else (29 if ev_h % 4 == 0 else 28))
-        adat["tol"] = date(ev_h, ho_h, 1)
-        adat["ig"] = date(ev_h, ho_h, utolso_nap)
+    m_ido = re.search(r"Elszámol(?:ási|t)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\.?\s*[-–]+\s*(\d{4}\.\d{2}\.\d{2})\.?", teljes_kereso, re.I)
+    if not m_ido:
+        m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\.\s*(?:[-–]\s*)?(\d{4}\.\d{2}\.\d{2})\.", teljes_kereso)
+    if m_ido:
+        adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
+        adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
 
-    m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", rendezett_szoveg, re.I)
-    if m_k:
-        adat["kelte"] = date(int(m_k.group(1)), int(m_k.group(2)), int(m_k.group(3)))
-
-    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", rendezett_szoveg, re.I)
-    if m_h:
-        adat["hatarido"] = date(int(m_h.group(1)), int(m_h.group(2)), int(m_h.group(3)))
+    m_br = re.search(r"Fizetendő\s*összeg(?:\s*összesen\s*\(Ft\))?\s*:?\s*(-?[\d\.\s\xa0]+(?:,\d+)?)", teljes_kereso, re.I)
+    if m_br:
+        br_val = _hu_szam(m_br.group(1))
+        if br_val is not None and br_val != 0:
+            adat["brutto"] = int(round(br_val))
 
 
     for s in osszes_sor:
