@@ -664,7 +664,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
     if m_h:
         adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
 
-        m_br = re.search(r"Fizetendő\s*:?\s*(-?[\d\.\s\xa0]+(?:,\d+)?)\s*Ft", rendezett_szoveg, re.I)
+    m_br = re.search(r"Fizetendő\s*:?\s*(-?[\d\.\s\xa0]+(?:,\d+)?)\s*Ft", rendezett_szoveg, re.I)
     if m_br:
         br_val = _hu_szam(m_br.group(1))
         if br_val is not None and br_val != 0:
