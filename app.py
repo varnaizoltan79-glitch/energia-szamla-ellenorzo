@@ -1009,15 +1009,16 @@ def szamol_tetelek(df):
         megn_str = str(row.get("Megnevezés") or "").strip()
         if megn_str == "ÖSSZESEN":
             continue
-        if megn_str == "Bruttó díj kompenzáció":
+        if megn_str in ("Fizetési felszólítás díja", "Késedelmi kamat/ÁHK", "Bruttó díj kompenzáció"):
             br_nyers = str(row.get("Bruttó összeg (Ft)") or "")
             negativ = "-" in br_nyers
             szamjegyek = re.sub(r"\D", "", br_nyers)
-            komp_ertek = (-int(szamjegyek) if negativ else int(szamjegyek)) if szamjegyek else 0
-            if komp_ertek != 0:
-                ossz_brutto += Decimal(komp_ertek)
-                tetelek.append({"megnevezes_eredeti": "Bruttó díj kompenzáció", "mennyiseg": 1.0, "mertekegyseg": "Ft", "egysegar_netto": 0.0, "szamitott_netto": 0.0, "afa_kulcs": 0.0, "szamitott_brutto": float(komp_ertek)})
+            br_ertek = (-int(szamjegyek) if negativ else int(szamjegyek)) if szamjegyek else 0
+            if br_ertek != 0:
+                ossz_brutto += Decimal(br_ertek)
+                tetelek.append({"megnevezes_eredeti": megn_str, "mennyiseg": 1.0, "mertekegyseg": "Ft", "egysegar_netto": 0.0, "szamitott_netto": 0.0, "afa_kulcs": 0.0, "szamitott_brutto": float(br_ertek)})
             continue
+
 
         m_val = row.get("Mennyiség")
         a_val = row.get("Nettó egységár")
@@ -2117,26 +2118,32 @@ def mutat_szamla_rogzites(user_id):
     alap_df = pd.concat([alap_df, komp_sor], ignore_index=True)
 
 
+    fix_brutto_nevek = ("Fizetési felszólítás díja", "Késedelmi kamat/ÁHK", "Bruttó díj kompenzáció")
+
     def _frissit_tetel_osszegek(df_be):
         normal_sorok = list()
-        komp_sor_adat = {"Megnevezés": "Bruttó díj kompenzáció", "Mennyiség": None, "Mértékegység": "Ft", "Nettó egységár": None, "ÁFA (%)": None, "Nettó összeg (Ft)": "", "Bruttó összeg (Ft)": "0 Ft"}
+        fix_sorok_map = {
+            nev: {"Megnevezés": nev, "Mennyiség": None, "Mértékegység": "Ft", "Nettó egységár": None, "ÁFA (%)": None, "Nettó összeg (Ft)": "", "Bruttó összeg (Ft)": "0 Ft"}
+            for nev in fix_brutto_nevek
+        }
 
         for _, sor in df_be.iterrows():
             nev_s = str(sor.get("Megnevezés") or "").strip()
             if nev_s == "ÖSSZESEN":
                 continue
-            if nev_s == "Bruttó díj kompenzáció":
-                komp_sor_adat = sor.to_dict()
+            if nev_s in fix_sorok_map:
+                fix_sorok_map[nev_s] = sor.to_dict()
             else:
                 normal_sorok.append(sor.to_dict())
 
-        rendezett_lista = normal_sorok + [komp_sor_adat]
+        rendezett_lista = normal_sorok + [fix_sorok_map[nev] for nev in fix_brutto_nevek]
         df_ki = pd.DataFrame(rendezett_lista)
 
         nettos = list()
         bruttos = list()
         komp_idx = None
         komp_val = 0
+        egyeb_brutto_ossz = 0
         mas_netto_ossz = Decimal("0")
         mas_brutto_ossz = Decimal("0")
 
@@ -2148,17 +2155,22 @@ def mutat_szamla_rogzites(user_id):
 
         for idx_r, sor in df_ki.iterrows():
             megn_str = str(sor.get("Megnevezés") or "").strip()
-            if megn_str == "Bruttó díj kompenzáció":
+            if megn_str in fix_brutto_nevek:
                 df_ki.at[idx_r, "Mennyiség"] = None
+                df_ki.at[idx_r, "Mértékegység"] = "Ft"
                 df_ki.at[idx_r, "Nettó egységár"] = None
                 df_ki.at[idx_r, "ÁFA (%)"] = None
                 br_nyers = str(sor.get("Bruttó összeg (Ft)") or "")
                 negativ = "-" in br_nyers
                 szamjegyek = re.sub(r"\D", "", br_nyers)
-                komp_val = (-int(szamjegyek) if negativ else int(szamjegyek)) if szamjegyek else 0
-                komp_idx = len(bruttos)
+                sor_br_val = (-int(szamjegyek) if negativ else int(szamjegyek)) if szamjegyek else 0
                 nettos.append("")
-                bruttos.append(ft_szoveg(komp_val))
+                if megn_str == "Bruttó díj kompenzáció":
+                    komp_val = sor_br_val
+                    komp_idx = len(bruttos)
+                else:
+                    egyeb_brutto_ossz += sor_br_val
+                bruttos.append(ft_szoveg(sor_br_val))
                 continue
 
             m_v = sor.get("Mennyiség")
@@ -2206,15 +2218,15 @@ def mutat_szamla_rogzites(user_id):
             ossz_fogy = elso_fogy
             fogy_me = elso_me
 
+        vegso_brutto = mas_brutto_ossz + Decimal(egyeb_brutto_ossz) + Decimal(komp_val)
         if komp_idx is not None and szamlan_brutto != 0:
-            akt_elt = Decimal(szamlan_brutto) - (mas_brutto_ossz + Decimal(komp_val))
+            akt_elt = Decimal(szamlan_brutto) - vegso_brutto
             if akt_elt != Decimal("0"):
                 bruttos[komp_idx] = f"🔴 {ft_szoveg(komp_val)}"
             elif komp_val != 0:
                 bruttos[komp_idx] = f"🟢 {ft_szoveg(komp_val)}"
 
-        vegso_brutto = mas_brutto_ossz + Decimal(komp_val)
-        szumma_egysegar = round(float(mas_netto_ossz) / ossz_fogy, 2) if ossz_fogy != 0.0 else None
+        szumma_egysegar = round(float(mas_netto_ossz) / ossz_fogy, 2) if ossz_fogy != 0.0 else 0
         ossz_menny_cella = round(ossz_fogy, 2) if ossz_fogy != 0.0 else 0
 
         osszesen_sor = pd.DataFrame([{
@@ -2233,7 +2245,6 @@ def mutat_szamla_rogzites(user_id):
         return df_ki
 
     df_state_kulcs = f"tetel_tabla_{form_kulcs}"
-
     if df_state_kulcs not in st.session_state:
         st.session_state[df_state_kulcs] = _frissit_tetel_osszegek(alap_df)
     else:
@@ -2250,7 +2261,17 @@ def mutat_szamla_rogzites(user_id):
     try:
         from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 
-        szerkesztheto_js = JsCode("function(params) { return params.data && params.data.Megnevezés !== 'ÖSSZESEN'; }")
+        szerkesztheto_js = JsCode("""
+        function(params) {
+            if (!params.data) return false;
+            let nev = params.data.Megnevezés;
+            if (nev === 'ÖSSZESEN') return false;
+            if (nev === 'Fizetési felszólítás díja' || nev === 'Késedelmi kamat/ÁHK' || nev === 'Bruttó díj kompenzáció') {
+                return params.colDef.field === 'Bruttó összeg (Ft)';
+            }
+            return true;
+        }
+        """)
         gb = GridOptionsBuilder.from_dataframe(display_df)
         gb.configure_default_column(editable=szerkesztheto_js, sortable=False, filter=False, resizable=True)
         gb.configure_column("Nettó összeg (Ft)", editable=False)
@@ -2292,9 +2313,6 @@ def mutat_szamla_rogzites(user_id):
             }
             """)
         )
-
-
-
         gb.configure_grid_options(
             domLayout="autoHeight",
             stopEditingWhenCellsLoseFocus=True,
