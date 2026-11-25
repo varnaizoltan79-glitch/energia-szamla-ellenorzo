@@ -608,6 +608,7 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
                         pod_brutto = int(round(val_b))
             continue
 
+
         if any(s_low.startswith(kz) for kz in kizaro_eleje):
             continue
 
@@ -663,12 +664,20 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
     if m_h:
         adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
 
-    m_br = re.search(r"Fizetendő\s*:?\s*([\d\.\s\xa0]+(?:,\d+)?)\s*Ft", rendezett_szoveg, re.I)
-    if m_br:
+    m_br = re.search(r"Fizetendő\s*:?\s*(-?[\d\.\s\xa0]+(?:,\d+)?)\s*Ft", rendezett_szoveg, re.I)
+    if not m_br:
+        m_br = re.search(r"Számla\s*végösszege\s+(-?[\d\.\s\xa0]+)\s+-?[\d\.\s\xa0]+\s+(-?[\d\.\s\xa0]+)", rendezett_szoveg, re.I)
+        if m_br:
+            br_val = _hu_szam(m_br.group(3))
+            if br_val:
+                adat["brutto"] = int(round(br_val))
+                adat["foszamla_brutto"] = adat["brutto"]
+    else:
         br_val = _hu_szam(m_br.group(1))
         if br_val:
             adat["brutto"] = int(round(br_val))
             adat["foszamla_brutto"] = adat["brutto"]
+
 
     pod_indulo_sorok = list()
     for idx, s in enumerate(osszes_sor):
