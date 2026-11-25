@@ -764,13 +764,16 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
 
-    m_az = re.search(r"(?:Felhasználási\s*hely\s*azonosító|Azonosító)\s*:?\s*([0-9A-Z-]{6,})", rendezett_szoveg, re.I)
-    if m_az:
+    m_hk = re.search(r"Hőközpont\s*azonosító\s*:?\s*([A-Z0-9-]+)", rendezett_szoveg, re.I)
+    m_az = re.search(r"Felhasználó\s*azonosító\s*száma\s*:?\s*([A-Z0-9\s-]+)", rendezett_szoveg, re.I)
+    if m_hk:
+        adat["pod"] = m_hk.group(1).strip()
+    elif m_az:
         adat["pod"] = m_az.group(1).strip()
 
-    m_ido = re.search(r"Elszámol(?:ási|t)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–.]+\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
+    m_ido = re.search(r"Elszámol(?:ási|t)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\.?\s*[-–]+\s*(\d{4}\.\d{2}\.\d{2})\.?", rendezett_szoveg, re.I)
     if not m_ido:
-        m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg)
+        m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\.?\s*[-–\s]+\s*(\d{4}\.\d{2}\.\d{2})\.?", rendezett_szoveg)
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
