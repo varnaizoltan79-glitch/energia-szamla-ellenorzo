@@ -1793,18 +1793,22 @@ def mutat_rogzitett_szamlak():
             szamla_tetelek = [t for t in osszes_tetel if int(t["szamla_id"]) == kiv_szamla_id]
             st.subheader(f"📋 Számla díjtételei ({szamla_obj.get('szamlaszam', '')})")
             if szamla_tetelek:
-                t_megj = [
-                    {
+                t_megj = list()
+                for t in szamla_tetelek:
+                    me_t = str(t.get("mertekegyseg") or "").strip()
+                    ar_t = float(t.get("egysegar_netto") or 0)
+                    ar_szov = f"{ar_t:,.6f}".rstrip("0").rstrip(".").replace(",", " ").replace(".", ",")
+                    ar_me_str = f"{ar_szov} Ft/{me_t}" if me_t else f"{ar_szov} Ft"
+                    t_megj.append({
                         "Megnevezés": t.get("megnevezes_eredeti", ""),
                         "Mennyiség": float(t.get("mennyiseg") or 0),
-                        "Mértékegység": t.get("mertekegyseg", ""),
-                        "Nettó egységár (Ft)": float(t.get("egysegar_netto") or 0),
+                        "Mértékegység": me_t,
+                        "Nettó egységár": ar_me_str,
                         "Nettó összeg (Ft)": int(round(float(t.get("szamitott_netto") or 0))),
                         "ÁFA (%)": float(t.get("afa_kulcs") or 0),
                         "Bruttó összeg (Ft)": int(round(float(t.get("szamitott_brutto") or 0)))
-                    }
-                    for t in szamla_tetelek
-                ]
+                    })
+
                 st.dataframe(pd.DataFrame(t_megj), use_container_width=True, hide_index=True)
 
 
@@ -2151,6 +2155,24 @@ def mutat_szamla_rogzites(user_id):
         gb = GridOptionsBuilder.from_dataframe(display_df)
         gb.configure_default_column(editable=szerkesztheto_js, sortable=False, filter=False, resizable=True)
         gb.configure_column("Nettó összeg (Ft)", editable=False)
+                gb.configure_column(
+            "Nettó egységár",
+            valueFormatter=JsCode("""
+            function(params) {
+                if (params.value === null || params.value === undefined || params.value === '') {
+                    return '';
+                }
+                let num = Number(params.value);
+                if (isNaN(num)) {
+                    return params.value;
+                }
+                let formazott = num.toLocaleString('hu-HU', {maximumFractionDigits: 6});
+                let me = (params.data && params.data['Mértékegység']) ? String(params.data['Mértékegység']).trim() : '';
+                return me ? (formazott + ' Ft/' + me) : (formazott + ' Ft');
+            }
+            """)
+        )
+
         gb.configure_grid_options(
             domLayout="autoHeight",
             stopEditingWhenCellsLoseFocus=True,
