@@ -1010,10 +1010,6 @@ def szamol_tetelek(df):
         if megn_str == "ÖSSZESEN":
             continue
         if megn_str == "Bruttó díj kompenzáció":
-
-        if megn_str == "ÖSSZESEN":
-            continue
-
             br_nyers = str(row.get("Bruttó összeg (Ft)") or "")
             negativ = "-" in br_nyers
             szamjegyek = re.sub(r"\D", "", br_nyers)
@@ -1039,7 +1035,6 @@ def szamol_tetelek(df):
         ossz_brutto += brutto
         tetelek.append({"megnevezes_eredeti": megn_str or "Díjtétel", "mennyiseg": float(menny), "mertekegyseg": str(row.get("Mértékegység") or "kWh"), "egysegar_netto": float(ar), "szamitott_netto": float(netto), "afa_kulcs": float(afa), "szamitott_brutto": float(brutto)})
     return ossz_netto, ossz_brutto, tetelek
-
 
 def mentes_adatbazisba(uj_szamla, tetelek, fajl, gyujto_marad=False):
     try:
