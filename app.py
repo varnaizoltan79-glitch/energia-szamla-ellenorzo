@@ -1036,8 +1036,7 @@ def szamol_tetelek(df):
             continue
         menny = Decimal(str(m_val))
         ar = Decimal(str(a_val))
-        if menny == 0 and ar == 0:
-            continue
+        
         afa_val = row.get("ÁFA (%)")
         afa = Decimal(str(afa_val)) if (afa_val is not None and not pd.isna(afa_val)) else Decimal("27.0")
         netto = (menny * ar).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
@@ -2093,7 +2092,8 @@ def mutat_szamla_rogzites(user_id):
 
     br_kulcs = f"br_{form_kulcs}"
     br_forras = kiv_pod_info["brutto"] if kiv_pod_info else (pdf_adat["brutto"] if pdf_adat else 0)
-    alap_br_szoveg = f"{int(br_forras):,}".replace(",", " ") if br_forras != 0 else ""
+    alap_br_szoveg = f"{int(br_forras):,}".replace(",", " ") if (br_forras != 0 or pdf_adat is not None) else ""
+
 
     szamlan_brutto_str = c2.text_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=alap_br_szoveg, placeholder="pl. 6 648", key=br_kulcs, on_change=formaz_ezres, args=(br_kulcs,))
     br_negativ = "-" in szamlan_brutto_str
@@ -2410,7 +2410,8 @@ def mutat_szamla_rogzites(user_id):
     m2.metric("Számított Bruttó", ft_szoveg(ossz_brutto))
     m3.metric("Eltérés a számlától", ft_szoveg(elteres))
 
-    egyezik = (elteres == Decimal("0")) and (len(tetelek) > 0) and (szamlan_brutto != 0) and datum_rendben
+    egyezik = (elteres == Decimal("0")) and (len(tetelek) > 0) and (szamlan_brutto_str.strip() != "") and datum_rendben
+
     if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
     if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha az eltérés pontosan 0 Ft (írd be a különbséget a Bruttó díj kompenzáció sorba) és a dátumok helyesek.")
 
