@@ -2155,7 +2155,7 @@ def mutat_szamla_rogzites(user_id):
         gb = GridOptionsBuilder.from_dataframe(display_df)
         gb.configure_default_column(editable=szerkesztheto_js, sortable=False, filter=False, resizable=True)
         gb.configure_column("Nettó összeg (Ft)", editable=False)
-                gb.configure_column(
+        gb.configure_column(
             "Nettó egységár",
             valueFormatter=JsCode("""
             function(params) {
