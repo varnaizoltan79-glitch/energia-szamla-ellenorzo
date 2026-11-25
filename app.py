@@ -2129,7 +2129,8 @@ def mutat_szamla_rogzites(user_id):
         df_ki["Bruttó összeg (Ft)"] = bruttos
         return df_ki
 
-        df_state_kulcs = f"tetel_tabla_{form_kulcs}"
+    df_state_kulcs = f"tetel_tabla_{form_kulcs}"
+        
     if df_state_kulcs not in st.session_state:
         st.session_state[df_state_kulcs] = _frissit_tetel_osszegek(alap_df)
     else:
