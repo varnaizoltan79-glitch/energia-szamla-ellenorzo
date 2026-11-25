@@ -795,20 +795,33 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
                 adat["brutto"] = int(round(br_val))
                 break
 
-    egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?"
+        egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?"
     me_minta = r"(m3|m³|hó|db|lm3)"
     tetel_minta = re.compile(rf"({egyes_szam})\s*{me_minta}\s+({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?(?:\s+({egyes_szam}))?(?:\s+(27|5|18|0|AHK)\b)?")
+    ar_only_minta = re.compile(rf"({egyes_szam})\s*Ft/({me_minta})(?:\s+({egyes_szam}))?(?:\s+(27|5|18|0|AHK)\b)?")
+
+    def _tisztit_vizmu_nev(nyers):
+        t = re.sub(r"\d{4}\.\d{2}\.\d{2}\.?\s*[-–]?\s*(?:\d{4}\.\d{2}\.\d{2}\.?)?", "", nyers)
+        t = re.sub(r"\b\d+\s*-\s*\d+\b", "", t)
+        return re.sub(r"\s+", " ", t).strip(" -–:|")
 
     talalatok = list()
     elozo_nev = ""
+    komp_osszeg = 0
     for s in osszes_sor:
         s_low = s.lower().strip()
-        if "bruttó számlaérték összesen" in s_low or "áfa összesítő" in s_low:
+        if "bruttó számlaérték összesen" in s_low or "áfa összesítő" in s_low or "áfa táblázat" in s_low:
             break
+
+        if s_low.startswith("kerekítés"):
+            szamok_k = re.findall(r"-?\d+", s)
+            if szamok_k:
+                komp_osszeg += int(szamok_k[-1])
+            elozo_nev = ""
+            continue
 
         if (
             s_low.startswith("fizetendő")
-            or s_low.startswith("kerekítés")
             or "összesen" in s_low
             or "tétel megnevezése" in s_low
             or "számlarészletező" in s_low
@@ -818,30 +831,46 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
             continue
 
         m = tetel_minta.search(s)
-        if not m:
-            tiszta_sor = re.sub(r"\d{4}\.\d{2}\.\d{2}\s*[-–]?", "", s)
-            tiszta_sor = re.sub(r"\b\d+\s*-\s*\d+\b", "", tiszta_sor).strip(" -–:|")
-            if tiszta_sor and len(tiszta_sor) >= 5 and any(k in tiszta_sor.lower() for k in ("vízmérő", "részszámlában", "ivóvíz", "szennyvíz", "vízterhelési", "alapdíj", "díj")):
+        m_ar = None if m else ar_only_minta.search(s)
+
+        if not m and not m_ar:
+            tiszta_sor = _tisztit_vizmu_nev(s)
+            if not tiszta_sor:
+                continue
+            if talalatok and len(tiszta_sor) <= 28 and not any(k in tiszta_sor.lower() for k in ("vízmérő", "mérőn", "ivóvíz", "szennyvíz", "vízterhelési", "alapdíj")):
+                elozo_nev = ""
+                continue
+            if len(tiszta_sor) >= 4 and any(k in tiszta_sor.lower() for k in ("vízmérő", "mérőn", "részszámlában", "ivóvíz", "szennyvíz", "vízterhelési", "alapdíj", "díj", "átalány")):
                 elozo_nev = f"{elozo_nev} {tiszta_sor}".strip()
             continue
 
-        bal_resz = s[:m.start()]
-        bal_resz = re.sub(r"\d{4}\.\d{2}\.\d{2}\s*[-–]\s*\d{4}\.\d{2}\.\d{2}", "", bal_resz)
-        bal_resz = re.sub(r"\b\d+\s*-\s*\d+\b", "", bal_resz).strip(" -–:|")
-        nev = f"{elozo_nev} {bal_resz}".strip() or "Víziközmű díjtétel"
-        elozo_nev = ""
+        if m:
+            bal_resz = _tisztit_vizmu_nev(s[:m.start()])
+            nev = f"{elozo_nev} {bal_resz}".strip() or "Víziközmű díjtétel"
+            menny = _hu_szam(m.group(1))
+            me = m.group(2).replace("m³", "m3")
+            ar = _hu_szam(m.group(3))
+            afa_nyers = m.group(5)
+        else:
+            bal_resz = _tisztit_vizmu_nev(s[:m_ar.start()])
+            nev = f"{elozo_nev} {bal_resz}".strip() or "Víziközmű díjtétel"
+            menny = 0.0
+            me = m_ar.group(2).replace("m³", "m3")
+            ar = _hu_szam(m_ar.group(1))
+            afa_nyers = m_ar.group(5)
 
-        menny = _hu_szam(m.group(1))
-        me = m.group(2).replace("m³", "m3")
-        ar = _hu_szam(m.group(3))
-        afa_nyers = m.group(5)
+        elozo_nev = ""
         afa = 27.0 if not afa_nyers else (0.0 if afa_nyers == "AHK" else float(afa_nyers))
 
         if menny is not None and ar is not None:
             talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
     if talalatok:
-        adat["tetelek_df"] = pd.DataFrame(talalatok)
+        df_eredmeny = pd.DataFrame(talalatok)
+        if komp_osszeg != 0:
+            komp_sor = pd.DataFrame([{"Megnevezés": "Bruttó díj kompenzáció", "Mennyiség": 1.0, "Mértékegység": "Ft", "Nettó egységár": 0.0, "ÁFA (%)": 0.0, "Bruttó összeg (Ft)": ft_szoveg(komp_osszeg)}])
+            df_eredmeny = pd.concat([df_eredmeny, komp_sor], ignore_index=True)
+        adat["tetelek_df"] = df_eredmeny
     return adat
 
 
