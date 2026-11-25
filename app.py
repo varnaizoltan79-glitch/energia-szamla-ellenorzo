@@ -2335,7 +2335,6 @@ def mutat_szamla_rogzites(user_id):
             """)
         )
         gb.configure_grid_options(
-            domLayout="autoHeight",
             stopEditingWhenCellsLoseFocus=True,
             getRowStyle=JsCode("""
             function(params) {
@@ -2346,14 +2345,17 @@ def mutat_szamla_rogzites(user_id):
             """)
         )
 
+        tabla_magassag = min(650, len(display_df) * 29 + 46)
         grid_res = AgGrid(
             display_df,
             gridOptions=gb.build(),
             update_mode=GridUpdateMode.VALUE_CHANGED,
             allow_unsafe_jscode=True,
             fit_columns_on_grid_load=True,
+            height=tabla_magassag,
             key=f"ag_ed_{form_kulcs}"
         )
+
         nyers_data = getattr(grid_res, "data", None)
         if nyers_data is None and isinstance(grid_res, dict):
             nyers_data = grid_res.get("data")
