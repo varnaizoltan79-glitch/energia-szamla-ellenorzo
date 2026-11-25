@@ -2311,7 +2311,10 @@ def mutat_szamla_rogzites(user_id):
 
         df_ki["Nettó összeg (Ft)"] = nettos
         df_ki["Bruttó összeg (Ft)"] = bruttos
+        oszlop_sorrend = ["Megnevezés", "Mennyiség", "Mértékegység", "Nettó egységár", "ÁFA (%)", "Nettó összeg (Ft)", "Bruttó összeg (Ft)"]
+        df_ki = df_ki[oszlop_sorrend]
         return df_ki
+
 
     df_state_kulcs = f"tetel_tabla_{form_kulcs}"
     if df_state_kulcs not in st.session_state:
