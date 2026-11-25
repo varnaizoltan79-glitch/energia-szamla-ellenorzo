@@ -2355,6 +2355,7 @@ def mutat_szamla_rogzites(user_id):
         )
 
         tabla_magassag = min(650, len(display_df) * 29 + 46)
+                ag_rev = st.session_state.get(f"ag_rev_{form_kulcs}", 0)
         grid_res = AgGrid(
             display_df,
             gridOptions=gb.build(),
@@ -2363,10 +2364,8 @@ def mutat_szamla_rogzites(user_id):
             allow_unsafe_jscode=True,
             fit_columns_on_grid_load=True,
             height=tabla_magassag,
-            key=f"ag_ed_{form_kulcs}"
+            key=f"ag_ed_{form_kulcs}_{ag_rev}"
         )
-
-
         nyers_data = getattr(grid_res, "data", None)
         if nyers_data is None and isinstance(grid_res, dict):
             nyers_data = grid_res.get("data")
@@ -2379,7 +2378,6 @@ def mutat_szamla_rogzites(user_id):
             disabled=list(("Nettó összeg (Ft)",)),
             key=f"ed_{form_kulcs}"
         )
-
 
     ujraszamolt_df = _frissit_tetel_osszegek(szerk_df)
     regi_parok = list(zip(
@@ -2396,6 +2394,7 @@ def mutat_szamla_rogzites(user_id):
     ))
     if regi_parok != uj_parok:
         st.session_state[df_state_kulcs] = ujraszamolt_df
+        st.session_state[f"ag_rev_{form_kulcs}"] = st.session_state.get(f"ag_rev_{form_kulcs}", 0) + 1
         st.rerun()
 
     ossz_netto, ossz_brutto, tetelek = szamol_tetelek(ujraszamolt_df)
