@@ -2144,7 +2144,8 @@ def mutat_szamla_rogzites(user_id):
     akt_tabla_df = st.session_state[df_state_kulcs]
     tetelek_csak_df = akt_tabla_df[akt_tabla_df["Megnevezés"] != "ÖSSZESEN"].copy()
     ossz_sor_df = akt_tabla_df[akt_tabla_df["Megnevezés"] == "ÖSSZESEN"].copy()
-    pinned_osszesen = ossz_sor_df.where(pd.notnull(ossz_sor_df), "").to_dict(orient="records")
+    pinned_osszesen = ossz_sor_df.astype(object).where(pd.notnull(ossz_sor_df), None).to_dict(orient="records")
+
 
     try:
         from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
@@ -2164,7 +2165,8 @@ def mutat_szamla_rogzites(user_id):
             """)
         )
 
-        tabla_magassag = min(560, max(190, (len(tetelek_csak_df) + 2) * 38 + 42))
+        tabla_magassag = min(560, max(160, (len(tetelek_csak_df) + 1) * 35 + 48))
+
         grid_res = AgGrid(
             tetelek_csak_df,
             gridOptions=gb.build(),
