@@ -2142,44 +2142,39 @@ def mutat_szamla_rogzites(user_id):
         st.rerun()
 
     akt_tabla_df = st.session_state[df_state_kulcs]
-    tetelek_csak_df = akt_tabla_df[akt_tabla_df["Megnevezés"] != "ÖSSZESEN"].copy()
-    ossz_sor_df = akt_tabla_df[akt_tabla_df["Megnevezés"] == "ÖSSZESEN"].copy()
-    pinned_osszesen = ossz_sor_df.astype(object).where(pd.notnull(ossz_sor_df), None).to_dict(orient="records")
-
+    display_df = akt_tabla_df.astype(object).where(pd.notnull(akt_tabla_df), None)
 
     try:
         from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 
-        gb = GridOptionsBuilder.from_dataframe(tetelek_csak_df)
-        gb.configure_default_column(editable=True, sortable=False, filter=False, resizable=True)
+        szerkesztheto_js = JsCode("function(params) { return params.data && params.data.Megnevezés !== 'ÖSSZESEN'; }")
+        gb = GridOptionsBuilder.from_dataframe(display_df)
+        gb.configure_default_column(editable=szerkesztheto_js, sortable=False, filter=False, resizable=True)
         gb.configure_column("Nettó összeg (Ft)", editable=False)
         gb.configure_grid_options(
-            pinnedBottomRowData=pinned_osszesen,
+            domLayout="autoHeight",
             stopEditingWhenCellsLoseFocus=True,
             getRowStyle=JsCode("""
             function(params) {
-                if (params.node.rowPinned) {
+                if (params.data && params.data.Megnevezés === 'ÖSSZESEN') {
                     return {'font-weight': 'bold', 'background-color': '#e6f3ff', 'color': '#0b3d91'};
                 }
             }
             """)
         )
 
-        tabla_magassag = min(560, max(160, (len(tetelek_csak_df) + 1) * 35 + 48))
-
         grid_res = AgGrid(
-            tetelek_csak_df,
+            display_df,
             gridOptions=gb.build(),
             update_mode=GridUpdateMode.VALUE_CHANGED,
             allow_unsafe_jscode=True,
             fit_columns_on_grid_load=True,
-            height=tabla_magassag,
             key=f"ag_ed_{form_kulcs}"
         )
         nyers_data = getattr(grid_res, "data", None)
         if nyers_data is None and isinstance(grid_res, dict):
             nyers_data = grid_res.get("data")
-        szerk_df = pd.DataFrame(nyers_data) if nyers_data is not None else tetelek_csak_df
+        szerk_df = pd.DataFrame(nyers_data) if nyers_data is not None else akt_tabla_df
     except ImportError:
         szerk_df = st.data_editor(
             akt_tabla_df,
@@ -2188,6 +2183,7 @@ def mutat_szamla_rogzites(user_id):
             disabled=list(("Nettó összeg (Ft)",)),
             key=f"ed_{form_kulcs}"
         )
+
 
     ujraszamolt_df = _frissit_tetel_osszegek(szerk_df)
     regi_parok = list(zip(
