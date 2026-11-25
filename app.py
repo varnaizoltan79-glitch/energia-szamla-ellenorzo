@@ -2156,6 +2156,24 @@ def mutat_szamla_rogzites(user_id):
         gb.configure_default_column(editable=szerkesztheto_js, sortable=False, filter=False, resizable=True)
         gb.configure_column("Nettó összeg (Ft)", editable=False)
         gb.configure_column(
+            "Mennyiség",
+            valueFormatter=JsCode("""
+            function(params) {
+                if (params.value === null || params.value === undefined || params.value === '') {
+                    return '';
+                }
+                let num = Number(params.value);
+                if (isNaN(num)) {
+                    return params.value;
+                }
+                if (params.data && params.data.Megnevezés === 'ÖSSZESEN') {
+                    return num.toLocaleString('hu-HU', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+                }
+                return num.toLocaleString('hu-HU', {maximumFractionDigits: 4});
+            }
+            """)
+        )
+        gb.configure_column(
             "Nettó egységár",
             valueFormatter=JsCode("""
             function(params) {
@@ -2166,12 +2184,16 @@ def mutat_szamla_rogzites(user_id):
                 if (isNaN(num)) {
                     return params.value;
                 }
-                let formazott = num.toLocaleString('hu-HU', {maximumFractionDigits: 6});
+                let isOsszesen = (params.data && params.data.Megnevezés === 'ÖSSZESEN');
+                let formazott = isOsszesen
+                    ? num.toLocaleString('hu-HU', {minimumFractionDigits: 2, maximumFractionDigits: 2})
+                    : num.toLocaleString('hu-HU', {maximumFractionDigits: 6});
                 let me = (params.data && params.data['Mértékegység']) ? String(params.data['Mértékegység']).trim() : '';
                 return me ? (formazott + ' Ft/' + me) : (formazott + ' Ft');
             }
             """)
         )
+
 
         gb.configure_grid_options(
             domLayout="autoHeight",
