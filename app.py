@@ -2129,8 +2129,7 @@ def mutat_szamla_rogzites(user_id):
         df_ki["Bruttó összeg (Ft)"] = bruttos
         return df_ki
 
-    df_state_kulcs = f"tetel_tabla_{form_kulcs}"
-        
+        df_state_kulcs = f"tetel_tabla_{form_kulcs}"
     if df_state_kulcs not in st.session_state:
         st.session_state[df_state_kulcs] = _frissit_tetel_osszegek(alap_df)
     else:
@@ -2141,26 +2140,58 @@ def mutat_szamla_rogzites(user_id):
         st.session_state[df_state_kulcs] = _frissit_tetel_osszegek(pd.concat([st.session_state[df_state_kulcs], uj_sor], ignore_index=True))
         st.rerun()
 
-    def _stilus_osszesen_sor(sor):
-        if str(sor.get("Megnevezés") or "").strip() == "ÖSSZESEN":
-            return ["font-weight: bold; background-color: #e6f3ff; color: #0b3d91"] * len(sor)
-        return [""] * len(sor)
+    akt_tabla_df = st.session_state[df_state_kulcs]
+    tetelek_csak_df = akt_tabla_df[akt_tabla_df["Megnevezés"] != "ÖSSZESEN"].copy()
+    ossz_sor_df = akt_tabla_df[akt_tabla_df["Megnevezés"] == "ÖSSZESEN"].copy()
+    pinned_osszesen = ossz_sor_df.where(pd.notnull(ossz_sor_df), "").to_dict(orient="records")
 
-    szerk_df = st.data_editor(
-        st.session_state[df_state_kulcs].style.apply(_stilus_osszesen_sor, axis=1),
-        num_rows="fixed",
-        use_container_width=True,
-        disabled=list(("Nettó összeg (Ft)",)),
-        key=f"ed_{form_kulcs}"
-    )
+    try:
+        from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 
+        gb = GridOptionsBuilder.from_dataframe(tetelek_csak_df)
+        gb.configure_default_column(editable=True, sortable=False, filter=False, resizable=True)
+        gb.configure_column("Nettó összeg (Ft)", editable=False)
+        gb.configure_grid_options(
+            pinnedBottomRowData=pinned_osszesen,
+            stopEditingWhenCellsLoseFocus=True,
+            getRowStyle=JsCode("""
+            function(params) {
+                if (params.node.rowPinned) {
+                    return {'font-weight': 'bold', 'background-color': '#e6f3ff', 'color': '#0b3d91'};
+                }
+            }
+            """)
+        )
+
+        tabla_magassag = min(560, max(190, (len(tetelek_csak_df) + 2) * 38 + 42))
+        grid_res = AgGrid(
+            tetelek_csak_df,
+            gridOptions=gb.build(),
+            update_mode=GridUpdateMode.VALUE_CHANGED,
+            allow_unsafe_jscode=True,
+            fit_columns_on_grid_load=True,
+            height=tabla_magassag,
+            key=f"ag_ed_{form_kulcs}"
+        )
+        nyers_data = getattr(grid_res, "data", None)
+        if nyers_data is None and isinstance(grid_res, dict):
+            nyers_data = grid_res.get("data")
+        szerk_df = pd.DataFrame(nyers_data) if nyers_data is not None else tetelek_csak_df
+    except ImportError:
+        szerk_df = st.data_editor(
+            akt_tabla_df,
+            num_rows="fixed",
+            use_container_width=True,
+            disabled=list(("Nettó összeg (Ft)",)),
+            key=f"ed_{form_kulcs}"
+        )
 
     ujraszamolt_df = _frissit_tetel_osszegek(szerk_df)
     regi_parok = list(zip(
-        st.session_state[df_state_kulcs]["Mennyiség"].fillna(-999999),
-        st.session_state[df_state_kulcs]["Nettó egységár"].fillna(-999999),
-        st.session_state[df_state_kulcs]["Nettó összeg (Ft)"],
-        st.session_state[df_state_kulcs]["Bruttó összeg (Ft)"]
+        akt_tabla_df["Mennyiség"].fillna(-999999),
+        akt_tabla_df["Nettó egységár"].fillna(-999999),
+        akt_tabla_df["Nettó összeg (Ft)"],
+        akt_tabla_df["Bruttó összeg (Ft)"]
     ))
     uj_parok = list(zip(
         ujraszamolt_df["Mennyiség"].fillna(-999999),
@@ -2173,6 +2204,7 @@ def mutat_szamla_rogzites(user_id):
         st.rerun()
 
     ossz_netto, ossz_brutto, tetelek = szamol_tetelek(ujraszamolt_df)
+
 
 
 
