@@ -1622,7 +1622,7 @@ def mutat_rogzitett_szamlak():
     if szurt_lista is None:
         return
 
-        ossz_netto = int(df["Nettó összeg (Ft)"].sum())
+    ossz_netto = int(df["Nettó összeg (Ft)"].sum())
     ossz_brutto = int(df["Bruttó összeg (Ft)"].sum())
     utolso_res = supabase.table("szamlak").select("id").order("id", desc=True).limit(1).execute().data or list()
     utolso_id = int(next(iter(utolso_res), {}).get("id") or -1)
