@@ -2168,7 +2168,7 @@ def mutat_szamla_rogzites(user_id):
                 }
                 let isOsszesen = (params.data && params.data.Megnevezés === 'ÖSSZESEN');
                 let reszek = isOsszesen ? num.toFixed(2).split('.') : String(Number(num.toFixed(4))).split('.');
-                reszek = reszek.replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');
+                reszek[0] = reszek[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');
                 return reszek.join(',');
             }
             """)
@@ -2186,13 +2186,14 @@ def mutat_szamla_rogzites(user_id):
                 }
                 let isOsszesen = (params.data && params.data.Megnevezés === 'ÖSSZESEN');
                 let reszek = isOsszesen ? num.toFixed(2).split('.') : String(Number(num.toFixed(6))).split('.');
-                reszek = reszek.replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');
+                reszek[0] = reszek[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');
                 let formazott = reszek.join(',');
                 let me = (params.data && params.data['Mértékegység']) ? String(params.data['Mértékegység']).trim() : '';
                 return me ? (formazott + ' Ft/' + me) : (formazott + ' Ft');
             }
             """)
         )
+
 
 
         gb.configure_grid_options(
