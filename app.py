@@ -903,8 +903,39 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
         if br_val is not None and br_val != 0:
             adat["brutto"] = int(round(br_val))
 
-    egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?"
-    tetel_minta = re.compile(rf"({egyes_szam})\s*(MW|kW|MWh|kWh|GJ|MJ|m3|m³|hó|db)\s+({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?(?:\s+({egyes_szam}))?(?:\s+(5|27|18|0|AHK)\b)?")
+    egyes_szam = r"-?\d{1,3}(?:[\s\xa0.]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?"
+    tetel_minta = re.compile(
+        rf"({egyes_szam})[\s\xa0]*(MW|kW|MWh|kWh|GJ|MJ|m3|m³|hó|db)[\s\xa0]+({egyes_szam})[\s\xa0]*Ft(?:/[A-Za-z0-9³]+)?(?:[\s\xa0]+({egyes_szam}))?(?:[\s\xa0]+(5|27|18|0|AHK)\b)?"
+    )
+
+    def _kinyer_tetel_sorbol(s, akt_szekcio):
+        m = tetel_minta.search(s)
+        if not m:
+            return None
+        bal_resz = re.sub(r"\d{4}\.\d{2}\.\d{2}\.?\s*[-–]?\s*(?:\d{4}\.\d{2}\.\d{2}\.?)?", "", s[:m.start()])
+        bal_resz = re.sub(r"\b\d{4}\.\d{2}\s*hó\b", "", bal_resz, flags=re.I)
+        bal_resz = re.sub(r"\b\d+[.,]\d{2,4}\b", "", bal_resz).strip(" -–:|")
+        if not bal_resz and "alapdíj" in s.lower():
+            bal_resz = "Alapdíj"
+        elif not bal_resz and "hődíj" in s.lower():
+            bal_resz = "Hődíj"
+        nev = f"{akt_szekcio} - {bal_resz}".strip(" -") if (akt_szekcio and bal_resz) else (bal_resz or "Távhő díjtétel")
+
+        menny = _hu_szam(m.group(1))
+        me = m.group(2).replace("m³", "m3")
+        ar = _hu_szam(m.group(3))
+        netto_pdf = _hu_szam(m.group(4)) if m.group(4) else None
+        afa_nyers = m.group(5)
+        if afa_nyers:
+            afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
+        else:
+            afa = 5.0 if me in ("MW", "kW", "MWh", "kWh", "GJ", "MJ") else 27.0
+
+        if menny is None or ar is None:
+            return None
+        if netto_pdf is not None and menny != 0 and abs((menny * ar / 12.0) - netto_pdf) <= 2.0:
+            ar = round(netto_pdf / menny, 6)
+        return {"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa}
 
     talalatok = list()
     akt_szekcio = ""
@@ -922,26 +953,17 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
         if "összesen" in s_low or s_low.startswith("kerekítés") or s_low.startswith("tétel"):
             continue
 
-        m = tetel_minta.search(s)
-        if not m:
-            continue
+        tetel = _kinyer_tetel_sorbol(s, akt_szekcio)
+        if tetel:
+            talalatok.append(tetel)
 
-        bal_resz = re.sub(r"\d{4}\.\d{2}\.\d{2}\.?\s*[-–]?\s*(?:\d{4}\.\d{2}\.\d{2}\.?)?", "", s[:m.start()])
-        bal_resz = re.sub(r"\b\d{4}\.\d{2}\s*hó\b", "", bal_resz, flags=re.I)
-        bal_resz = re.sub(r"\b\d+[.,]\d{2,4}\b", "", bal_resz).strip(" -–:|")
-        nev = f"{akt_szekcio} - {bal_resz}".strip(" -") if (akt_szekcio and bal_resz) else (bal_resz or "Távhő díjtétel")
-
-        menny = _hu_szam(m.group(1))
-        me = m.group(2).replace("m³", "m3")
-        ar = _hu_szam(m.group(3))
-        afa_nyers = m.group(5)
-        if afa_nyers:
-            afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
-        else:
-            afa = 5.0 if me in ("MW", "kW", "MWh", "kWh", "GJ", "MJ") else 27.0
-
-        if menny is not None and ar is not None:
-            talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
+    if not talalatok:
+        reszletezo_szoveg = szoveg.split("Bruttó számlaérték összesen")[0]
+        for m in tetel_minta.finditer(reszletezo_szoveg):
+            kontextus = reszletezo_szoveg[max(0, m.start() - 120):m.end()]
+            tetel = _kinyer_tetel_sorbol(kontextus, "Fűtési célú" if "fűtési célú" in kontextus.lower() else "")
+            if tetel:
+                talalatok.append(tetel)
 
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
