@@ -1537,6 +1537,8 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
         fogy_menny = fogyasztas_per_szamla.get(sid, 0.0)
         fogy_me = fogyasztas_me_per_szamla.get(sid, "kWh")
         netto_ossz = netto_per_szamla.get(sid, 0.0)
+        menny_szov = f"{fogy_menny:,.2f}".replace(",", " ").replace(".", ",")
+        menny_str = f"{menny_szov} {fogy_me}" if fogy_menny != 0 else f"0,00 {fogy_me}"
         egysegar_str = f"{netto_ossz / fogy_menny:,.2f} Ft/{fogy_me}".replace(",", " ").replace(".", ",") if fogy_menny != 0 else None
 
         sor_adat = {
@@ -1548,16 +1550,18 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
             "Szolgáltató": s_map.get(s["szolgaltato_id"], "Ismeretlen"),
             "Időszak kezdete": s.get("idoszak_tol", ""),
             "Időszak vége": s.get("idoszak_ig", ""),
+            "Mennyiség": menny_str,
+            "Nettó összeg (Ft)": int(round(netto_ossz)),
             "Bruttó összeg (Ft)": int(round(float(s.get("szamlan_szereplo_brutto") or 0))),
             "Szumma nettó egységár": egysegar_str,
             "Státusz": s.get("ellenorzes_statusz", ""),
             "PDF fájl": s.get("pdf_utvonal") or s.get("pdf_fajlnev") or ""
-
         }
         sorok.append(sor_adat)
 
     df = pd.DataFrame(sorok)
     return szurt_lista, df, osszes_tetel, netto_per_szamla, fogyasztas_per_szamla, h_map, s_map
+
 
 
 def _alkalmaz_oszlop_szuroket(df, szurt_lista, kulcs_prefix="rogz_col"):
@@ -1618,9 +1622,23 @@ def mutat_rogzitett_szamlak():
     if szurt_lista is None:
         return
 
+        ossz_netto = int(df["Nettó összeg (Ft)"].sum())
     ossz_brutto = int(df["Bruttó összeg (Ft)"].sum())
     utolso_res = supabase.table("szamlak").select("id").order("id", desc=True).limit(1).execute().data or list()
     utolso_id = int(next(iter(utolso_res), {}).get("id") or -1)
+
+    menny_per_me = dict()
+    for m_txt in df["Mennyiség"].tolist():
+        m_illeszt = re.match(r"^(-?[\d\s]+,\d+)\s*(.*)$", str(m_txt or "").strip())
+        if m_illeszt:
+            ertek = float(m_illeszt.group(1).replace(" ", "").replace(",", "."))
+            egyseg = m_illeszt.group(2).strip()
+            if ertek != 0.0 and egyseg:
+                menny_per_me[egyseg] = menny_per_me.get(egyseg, 0.0) + ertek
+    ossz_menny_str = " | ".join(
+        f"{v:,.2f}".replace(",", " ").replace(".", ",") + f" {k}"
+        for k, v in menny_per_me.items()
+    )
 
     osszesen_sor = {
         "ID": -1,
@@ -1631,6 +1649,8 @@ def mutat_rogzitett_szamlak():
         "Szolgáltató": "",
         "Időszak kezdete": "",
         "Időszak vége": "",
+        "Mennyiség": ossz_menny_str,
+        "Nettó összeg (Ft)": ossz_netto,
         "Bruttó összeg (Ft)": ossz_brutto,
         "Szumma nettó egységár": "",
         "Státusz": "",
@@ -1659,23 +1679,39 @@ def mutat_rogzitett_szamlak():
         )
         gb.configure_column("ID", hide=True)
         gb.configure_column("Számlaszám", checkboxSelection=True, headerCheckboxSelection=False, minWidth=160)
-        gb.configure_column(
-            "Bruttó összeg (Ft)",
-            type=["numericColumn"],
-            valueFormatter=JsCode("function(params) { return params.value != null ? Number(params.value).toLocaleString('hu-HU') + ' Ft' : ''; }")
-        )
+        ft_formatter = JsCode("function(params) { return params.value != null ? Number(params.value).toLocaleString('hu-HU') + ' Ft' : ''; }")
+        gb.configure_column("Nettó összeg (Ft)", type=["numericColumn"], valueFormatter=ft_formatter)
+        gb.configure_column("Bruttó összeg (Ft)", type=["numericColumn"], valueFormatter=ft_formatter)
         gb.configure_selection(selection_mode="single", use_checkbox=True)
 
         frissit_osszesen_js = JsCode("""
         function(params) {
             let db = 0;
-            let osszeg = 0;
+            let nettoOsszeg = 0;
+            let bruttoOsszeg = 0;
+            let mennyMap = {};
             params.api.forEachNodeAfterFilter(function(node) {
                 if (node.data && node.data.ID > 0) {
                     db += 1;
-                    osszeg += Number(node.data['Bruttó összeg (Ft)'] || 0);
+                    nettoOsszeg += Number(node.data['Nettó összeg (Ft)'] || 0);
+                    bruttoOsszeg += Number(node.data['Bruttó összeg (Ft)'] || 0);
+                    let mStr = String(node.data['Mennyiség'] || '').trim();
+                    let mMatch = mStr.match(/^(-?[\\d\\s]+,\\d+)\\s*(.*)$/);
+                    if (mMatch) {
+                        let val = parseFloat(mMatch[1].replace(/\\s+/g, '').replace(',', '.'));
+                        let unit = mMatch[2].trim();
+                        if (!isNaN(val) && val !== 0 && unit) {
+                            mennyMap[unit] = (mennyMap[unit] || 0) + val;
+                        }
+                    }
                 }
             });
+            let mennyReszek = [];
+            for (let u in mennyMap) {
+                let p = mennyMap[u].toFixed(2).split('.');
+                p[0] = p[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');
+                mennyReszek.push(p.join(',') + ' ' + u);
+            }
             params.api.setGridOption('pinnedBottomRowData', [{
                 'ID': -1,
                 'Számlaszám': 'ÖSSZESEN',
@@ -1685,7 +1721,9 @@ def mutat_rogzitett_szamlak():
                 'Szolgáltató': '',
                 'Időszak kezdete': '',
                 'Időszak vége': '',
-                'Bruttó összeg (Ft)': osszeg,
+                'Mennyiség': mennyReszek.join(' | '),
+                'Nettó összeg (Ft)': nettoOsszeg,
+                'Bruttó összeg (Ft)': bruttoOsszeg,
                 'Szumma nettó egységár': '',
                 'Státusz': '',
                 'PDF fájl': ''
@@ -1707,6 +1745,7 @@ def mutat_rogzitett_szamlak():
             }}
             """)
         )
+
 
         grid_valasz = AgGrid(
             df,
