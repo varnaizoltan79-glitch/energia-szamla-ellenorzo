@@ -885,7 +885,7 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
             m_ho = re.search(r"Elszámol(?:ási|t)\s*időszak\s*:?\s*(\d{4})\.(\d{2})(?!\.\d)", teljes_kereso, re.I)
             if m_ho:
                 ev, ho = int(m_ho.group(1)), int(m_ho.group(2))
-                utolso_nap = calendar.monthrange(ev, ho)
+                _, utolso_nap = calendar.monthrange(ev, ho)
                 adat["tol"] = date(ev, ho, 1)
                 adat["ig"] = date(ev, ho, utolso_nap)
 
