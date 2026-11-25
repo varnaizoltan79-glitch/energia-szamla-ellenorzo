@@ -1869,7 +1869,79 @@ def mutat_kimutatasok():
                 st.altair_chart(alt.Chart(szurt_t_df).mark_line(point=True).encode(x=alt.X("Elszámolási hónap:N", sort=ho_sorrend_t, axis=alt.Axis(labelAngle=0)), y=alt.Y("mean(Nettó egységár (Ft)):Q", axis=alt.Axis(title="Nettó egységár (Ft)")), color="Felhasználási hely:N").properties(height=280), use_container_width=True)
             st.dataframe(t_df, use_container_width=True, hide_index=True)
 
-    _mutat_tetel_osszesito_sor(szerkesztett_df, szam_netto, szam_brutto)
+
+def _mutat_tetel_osszesito_sor(df_adat, szam_netto, szam_brutto):
+    if df_adat is None or df_adat.empty:
+        return
+
+    ossz_fogy = 0.0
+    fogy_me = ""
+    tartalek_m3 = 0.0
+
+    for _, sor in df_adat.iterrows():
+        megn = str(sor.get("Megnevezés") or "").strip().lower()
+        if "kompenzáció" in megn:
+            continue
+        me_nyers = str(sor.get("Mértékegység") or "").strip()
+        me = me_nyers.lower()
+        try:
+            menny = float(sor.get("Mennyiség") or 0.0)
+        except Exception:
+            menny = 0.0
+
+        if ("energiadíj" in megn or "energia díj" in megn or "áramdíj" in megn or "földgáz" in megn or "gázdíj" in megn) and me in ("kwh", "m3", "m³", "mj", "gj"):
+            ossz_fogy += menny
+            fogy_me = "m³" if me in ("m3", "m³") else me_nyers
+        elif "hődíj" in megn and me in ("gj", "mj"):
+            ossz_fogy += menny
+            fogy_me = me_nyers
+        elif "ivóvíz" in megn and me in ("m3", "m³"):
+            ossz_fogy += menny
+            fogy_me = "m³"
+        elif ("szennyvíz" in megn or "vízfelmelegítési" in megn) and me in ("m3", "m³"):
+            tartalek_m3 += menny
+
+    if ossz_fogy == 0.0 and tartalek_m3 != 0.0:
+        ossz_fogy = tartalek_m3
+        fogy_me = "m³"
+
+    if ossz_fogy == 0.0:
+        for _, sor in df_adat.iterrows():
+            megn = str(sor.get("Megnevezés") or "").strip().lower()
+            if "kompenzáció" in megn:
+                continue
+            me_nyers = str(sor.get("Mértékegység") or "").strip()
+            if me_nyers.lower() in ("kwh", "m3", "m³", "gj", "mj"):
+                try:
+                    menny = float(sor.get("Mennyiség") or 0.0)
+                except Exception:
+                    menny = 0.0
+                if menny != 0.0:
+                    ossz_fogy = menny
+                    fogy_me = "m³" if me_nyers.lower() in ("m3", "m³") else me_nyers
+                    break
+
+    menny_str = f"{ossz_fogy:,.2f}".replace(",", " ").replace(".", ",") if ossz_fogy != 0 else "—"
+    egysegar_str = (
+        f"{float(szam_netto) / ossz_fogy:,.2f} Ft/{fogy_me}".replace(",", " ").replace(".", ",")
+        if ossz_fogy != 0 else "—"
+    )
+
+    osszesito_df = pd.DataFrame([{
+        "Megnevezés": "ÖSSZESEN",
+        "Mennyiség": menny_str,
+        "Mértékegység": fogy_me,
+        "Nettó egységár": egysegar_str,
+        "ÁFA (%)": "",
+        "Nettó összeg (Ft)": ft_szoveg(szam_netto),
+        "Bruttó összeg (Ft)": ft_szoveg(szam_brutto)
+    }])
+
+    st.dataframe(
+        osszesito_df.style.apply(lambda s: ["font-weight: bold; background-color: #f0f2f6"] * len(s), axis=1),
+        use_container_width=True,
+        hide_index=True
+    )
 
 
 def mutat_szamla_rogzites(user_id):
@@ -2085,6 +2157,7 @@ def mutat_szamla_rogzites(user_id):
         st.rerun()
 
     ossz_netto, ossz_brutto, tetelek = szamol_tetelek(ujraszamolt_df)
+    _mutat_tetel_osszesito_sor(ujraszamolt_df, ossz_netto, ossz_brutto)
 
 
     brutto_dec = Decimal(szamlan_brutto)
