@@ -2112,7 +2112,7 @@ def mutat_szamla_rogzites(user_id):
 
         vegso_brutto = mas_brutto_ossz + Decimal(komp_val)
         szumma_egysegar = round(float(mas_netto_ossz) / ossz_fogy, 2) if ossz_fogy != 0.0 else None
-        ossz_menny_cella = round(ossz_fogy, 2) if ossz_fogy != 0.0 else None
+        ossz_menny_cella = round(ossz_fogy, 2) if ossz_fogy != 0.0 else 0
 
         osszesen_sor = pd.DataFrame([{
             "Megnevezés": "ÖSSZESEN",
