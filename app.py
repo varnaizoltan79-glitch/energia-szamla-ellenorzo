@@ -2359,11 +2359,13 @@ def mutat_szamla_rogzites(user_id):
             display_df,
             gridOptions=gb.build(),
             update_mode=GridUpdateMode.VALUE_CHANGED,
+            reload_data=True,
             allow_unsafe_jscode=True,
             fit_columns_on_grid_load=True,
             height=tabla_magassag,
             key=f"ag_ed_{form_kulcs}"
         )
+
 
         nyers_data = getattr(grid_res, "data", None)
         if nyers_data is None and isinstance(grid_res, dict):
