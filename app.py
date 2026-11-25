@@ -795,14 +795,15 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
                 adat["brutto"] = int(round(br_val))
                 break
 
-        egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?"
+    egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?"
     me_minta = r"(m3|m³|hó|db|lm3)"
     tetel_minta = re.compile(rf"({egyes_szam})\s*{me_minta}\s+({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?(?:\s+({egyes_szam}))?(?:\s+(27|5|18|0|AHK)\b)?")
     ar_only_minta = re.compile(rf"({egyes_szam})\s*Ft/({me_minta})(?:\s+({egyes_szam}))?(?:\s+(27|5|18|0|AHK)\b)?")
 
     def _tisztit_vizmu_nev(nyers):
         t = re.sub(r"\d{4}\.\d{2}\.\d{2}\.?\s*[-–]?\s*(?:\d{4}\.\d{2}\.\d{2}\.?)?", "", nyers)
-        t = re.sub(r"\b\d+\s*-\s*\d+\b", "", t)
+        t = re.sub(r"\b\d+\s*-\s*\d*\b", "", t)
+        t = re.sub(r"(?<!-)\b\d{1,6}\b", "", t)
         return re.sub(r"\s+", " ", t).strip(" -–:|")
 
     talalatok = list()
@@ -837,10 +838,15 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
             tiszta_sor = _tisztit_vizmu_nev(s)
             if not tiszta_sor:
                 continue
-            if talalatok and len(tiszta_sor) <= 28 and not any(k in tiszta_sor.lower() for k in ("vízmérő", "mérőn", "ivóvíz", "szennyvíz", "vízterhelési", "alapdíj")):
-                elozo_nev = ""
+            utolso_nev_low = talalatok[-1]["Megnevezés"].lower() if talalatok else ""
+            elozo_tetel_folytatas = bool(talalatok) and not elozo_nev and (
+                tiszta_sor[0].islower()
+                or utolso_nev_low.endswith(("vagy", "mért", "arányos", "elszámolt"))
+            )
+            if elozo_tetel_folytatas:
+                talalatok[-1]["Megnevezés"] = f"{talalatok[-1]['Megnevezés']} {tiszta_sor}".strip()
                 continue
-            if len(tiszta_sor) >= 4 and any(k in tiszta_sor.lower() for k in ("vízmérő", "mérőn", "részszámlában", "ivóvíz", "szennyvíz", "vízterhelési", "alapdíj", "díj", "átalány")):
+            if len(tiszta_sor) >= 4 and any(k in tiszta_sor.lower() for k in ("vízmérő", "mérőn", "részszámlában", "ivóvíz", "szennyvíz", "vízterhelési", "alapdíj", "díj", "átalány", "áthárított")):
                 elozo_nev = f"{elozo_nev} {tiszta_sor}".strip()
             continue
 
@@ -865,6 +871,11 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         if menny is not None and ar is not None:
             talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
+    if komp_osszeg == 0:
+        m_ker = re.search(r"Kerekítés\s*\(?ÁFA\)?\s*(-?\d+)", szoveg, re.I)
+        if m_ker:
+            komp_osszeg = int(m_ker.group(1))
+
     if talalatok:
         df_eredmeny = pd.DataFrame(talalatok)
         if komp_osszeg != 0:
@@ -872,6 +883,7 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
             df_eredmeny = pd.concat([df_eredmeny, komp_sor], ignore_index=True)
         adat["tetelek_df"] = df_eredmeny
     return adat
+
 
 
 def _rendez_tavho_szo(w):
