@@ -1869,6 +1869,9 @@ def mutat_kimutatasok():
                 st.altair_chart(alt.Chart(szurt_t_df).mark_line(point=True).encode(x=alt.X("Elszámolási hónap:N", sort=ho_sorrend_t, axis=alt.Axis(labelAngle=0)), y=alt.Y("mean(Nettó egységár (Ft)):Q", axis=alt.Axis(title="Nettó egységár (Ft)")), color="Felhasználási hely:N").properties(height=280), use_container_width=True)
             st.dataframe(t_df, use_container_width=True, hide_index=True)
 
+    _mutat_tetel_osszesito_sor(szerkesztett_df, szam_netto, szam_brutto)
+
+
 def mutat_szamla_rogzites(user_id):
     fv = st.session_state["form_ver"]
     col_fej, col_gomb = st.columns((4, 1))
