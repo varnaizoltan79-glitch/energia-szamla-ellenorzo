@@ -2166,10 +2166,10 @@ def mutat_szamla_rogzites(user_id):
                 if (isNaN(num)) {
                     return params.value;
                 }
-                if (params.data && params.data.Megnevezés === 'ÖSSZESEN') {
-                    return num.toLocaleString('hu-HU', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-                }
-                return num.toLocaleString('hu-HU', {maximumFractionDigits: 4});
+                let isOsszesen = (params.data && params.data.Megnevezés === 'ÖSSZESEN');
+                let reszek = isOsszesen ? num.toFixed(2).split('.') : String(Number(num.toFixed(4))).split('.');
+                reszek = reszek.replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');
+                return reszek.join(',');
             }
             """)
         )
@@ -2185,9 +2185,9 @@ def mutat_szamla_rogzites(user_id):
                     return params.value;
                 }
                 let isOsszesen = (params.data && params.data.Megnevezés === 'ÖSSZESEN');
-                let formazott = isOsszesen
-                    ? num.toLocaleString('hu-HU', {minimumFractionDigits: 2, maximumFractionDigits: 2})
-                    : num.toLocaleString('hu-HU', {maximumFractionDigits: 6});
+                let reszek = isOsszesen ? num.toFixed(2).split('.') : String(Number(num.toFixed(6))).split('.');
+                reszek = reszek.replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');
+                let formazott = reszek.join(',');
                 let me = (params.data && params.data['Mértékegység']) ? String(params.data['Mértékegység']).trim() : '';
                 return me ? (formazott + ' Ft/' + me) : (formazott + ' Ft');
             }
