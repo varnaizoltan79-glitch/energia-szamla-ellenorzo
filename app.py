@@ -1791,26 +1791,86 @@ def mutat_rogzitett_szamlak():
 
             st.divider()
             szamla_tetelek = [t for t in osszes_tetel if int(t["szamla_id"]) == kiv_szamla_id]
+            st.divider()
+            szamla_tetelek = [t for t in osszes_tetel if int(t["szamla_id"]) == kiv_szamla_id]
             st.subheader(f"📋 Számla díjtételei ({szamla_obj.get('szamlaszam', '')})")
             if szamla_tetelek:
                 t_megj = list()
+                ossz_netto = 0.0
+                ossz_brutto = 0.0
+                ossz_fogy = 0.0
+                fogy_me = ""
+                tartalek_m3 = 0.0
+
                 for t in szamla_tetelek:
+                    megn_t = str(t.get("megnevezes_eredeti") or "").strip()
+                    megn_low = megn_t.lower()
+                    menny_t = float(t.get("mennyiseg") or 0.0)
                     me_t = str(t.get("mertekegyseg") or "").strip()
-                    ar_t = float(t.get("egysegar_netto") or 0)
-                    ar_szov = f"{ar_t:,.6f}".rstrip("0").rstrip(".").replace(",", " ").replace(".", ",")
+                    me_low = me_t.lower()
+                    ar_t = float(t.get("egysegar_netto") or 0.0)
+                    netto_t = float(t.get("szamitott_netto") or 0.0)
+                    afa_t = float(t.get("afa_kulcs") or 0.0)
+                    brutto_t = float(t.get("szamitott_brutto") or 0.0)
+
+                    ossz_netto += netto_t
+                    ossz_brutto += brutto_t
+
+                    if "kompenzáció" not in megn_low:
+                        if ("energiadíj" in megn_low or "energia díj" in megn_low or "áramdíj" in megn_low or "földgáz" in megn_low or "gázdíj" in megn_low) and me_low in ("kwh", "m3", "m³", "mj", "gj"):
+                            ossz_fogy += menny_t
+                            fogy_me = "m3" if me_low in ("m3", "m³") else me_t
+                        elif "hődíj" in megn_low and me_low in ("gj", "mj"):
+                            ossz_fogy += menny_t
+                            fogy_me = me_t
+                        elif "ivóvíz" in megn_low and me_low in ("m3", "m³"):
+                            ossz_fogy += menny_t
+                            fogy_me = "m3"
+                        elif ("szennyvíz" in megn_low or "vízfelmelegítési" in megn_low) and me_low in ("m3", "m³"):
+                            tartalek_m3 += menny_t
+
+                    menny_szov = f"{menny_t:,.4f}".rstrip("0").rstrip(".").replace(",", " ").replace(".", ",") if menny_t != 0 else "0"
+                    ar_szov = f"{ar_t:,.6f}".rstrip("0").rstrip(".").replace(",", " ").replace(".", ",") if ar_t != 0 else "0"
                     ar_me_str = f"{ar_szov} Ft/{me_t}" if me_t else f"{ar_szov} Ft"
+                    afa_szov = f"{afa_t:.1f}".rstrip("0").rstrip(".").replace(".", ",")
+
                     t_megj.append({
-                        "Megnevezés": t.get("megnevezes_eredeti", ""),
-                        "Mennyiség": float(t.get("mennyiseg") or 0),
+                        "Megnevezés": megn_t,
+                        "Mennyiség": menny_szov,
                         "Mértékegység": me_t,
                         "Nettó egységár": ar_me_str,
-                        "Nettó összeg (Ft)": int(round(float(t.get("szamitott_netto") or 0))),
-                        "ÁFA (%)": float(t.get("afa_kulcs") or 0),
-                        "Bruttó összeg (Ft)": int(round(float(t.get("szamitott_brutto") or 0)))
+                        "Nettó összeg (Ft)": ft_szoveg(int(round(netto_t))),
+                        "ÁFA (%)": afa_szov,
+                        "Bruttó összeg (Ft)": ft_szoveg(int(round(brutto_t)))
                     })
 
-                st.dataframe(pd.DataFrame(t_megj), use_container_width=True, hide_index=True)
+                if ossz_fogy == 0.0 and tartalek_m3 != 0.0:
+                    ossz_fogy = tartalek_m3
+                    fogy_me = "m3"
 
+                ossz_menny_str = f"{ossz_fogy:,.2f}".replace(",", " ").replace(".", ",")
+                szumma_ea = (ossz_netto / ossz_fogy) if ossz_fogy != 0.0 else 0.0
+                szumma_ea_str = f"{szumma_ea:,.2f}".replace(",", " ").replace(".", ",")
+                szumma_ea_me = f"{szumma_ea_str} Ft/{fogy_me}" if fogy_me else f"{szumma_ea_str} Ft"
+
+                t_megj.append({
+                    "Megnevezés": "ÖSSZESEN",
+                    "Mennyiség": ossz_menny_str,
+                    "Mértékegység": fogy_me,
+                    "Nettó egységár": szumma_ea_me,
+                    "Nettó összeg (Ft)": ft_szoveg(int(round(ossz_netto))),
+                    "ÁFA (%)": "",
+                    "Bruttó összeg (Ft)": ft_szoveg(int(round(ossz_brutto)))
+                })
+
+                t_df = pd.DataFrame(t_megj)
+
+                def _stilus_rogz_tetel_ossz(sor):
+                    if str(sor.get("Megnevezés") or "").strip() == "ÖSSZESEN":
+                        return ["font-weight: bold; background-color: #e6f3ff; color: #0b3d91"] * len(sor)
+                    return [""] * len(sor)
+
+                st.dataframe(t_df.style.apply(_stilus_rogz_tetel_ossz, axis=1), use_container_width=True, hide_index=True)
 
             
 def mutat_kimutatasok():
