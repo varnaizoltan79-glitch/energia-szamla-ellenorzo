@@ -2276,6 +2276,26 @@ def mutat_szamla_rogzites(user_id):
         gb.configure_default_column(editable=szerkesztheto_js, sortable=False, filter=False, resizable=True)
         gb.configure_column("Nettó összeg (Ft)", editable=False)
         gb.configure_column(
+            "Bruttó összeg (Ft)",
+            valueFormatter=JsCode("""
+            function(params) {
+                if (params.value === null || params.value === undefined || params.value === '') {
+                    return '0 Ft';
+                }
+                let raw = String(params.value);
+                let prefix = '';
+                if (raw.indexOf('🔴') !== -1) prefix = '🔴 ';
+                if (raw.indexOf('🟢') !== -1) prefix = '🟢 ';
+                let isNeg = raw.indexOf('-') !== -1;
+                let digits = raw.replace(/\\D/g, '');
+                if (!digits) return prefix + '0 Ft';
+                let numStr = String(Number(digits)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');
+                return prefix + (isNeg && Number(digits) !== 0 ? '-' : '') + numStr + ' Ft';
+            }
+            """)
+        )
+
+        gb.configure_column(
             "Mennyiség",
             valueFormatter=JsCode("""
             function(params) {
