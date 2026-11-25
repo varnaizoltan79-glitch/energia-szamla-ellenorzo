@@ -1007,7 +1007,10 @@ def szamol_tetelek(df):
     tetelek = list()
     for _, row in df.iterrows():
         megn_str = str(row.get("Megnevezés") or "").strip()
+        if megn_str == "ÖSSZESEN":
+            continue
         if megn_str == "Bruttó díj kompenzáció":
+
         if megn_str == "ÖSSZESEN":
             continue
 
