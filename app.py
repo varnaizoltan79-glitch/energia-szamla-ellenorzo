@@ -558,7 +558,8 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         pod_ig = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
 
     szam_minta = r"-?\d{1,3}(?:[ .]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
-    sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s*[-–]\s*(\d{{4}}\.\d{{2}}\.\d{{2}})\s*({szam_minta})\s+({szam_minta})(?:\s+(KIF\d+|KÖF|NAF|A\d+|B\d+))?\s+({szam_minta})\s*$")
+    sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s*[-–]\s*(\d{{4}}\.\d{{2}}\.\d{{2}})\s*({szam_minta})\s+({szam_minta})(?:\s+([A-ZÁÉÍÓÖŐÚÜŰ0-9/-]+))?\s+({szam_minta})\s*$")
+
     kizaro_eleje = ("összesen", "kereskedelmi díjak", "pénzeszközök", "közvetített szolgáltatás", "megnevezés", "áfa szerinti bontás", "mérő gyári", "mért időszak", "szerződésszám", "mérési pont", "fogyasztási hely", "telephelyre vonatkozó", "oldalak száma")
 
     akt_me = "kWh"
