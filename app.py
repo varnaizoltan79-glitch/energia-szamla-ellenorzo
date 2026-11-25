@@ -2355,7 +2355,7 @@ def mutat_szamla_rogzites(user_id):
         )
 
         tabla_magassag = min(650, len(display_df) * 29 + 46)
-                ag_rev = st.session_state.get(f"ag_rev_{form_kulcs}", 0)
+        ag_rev = st.session_state.get(f"ag_rev_{form_kulcs}", 0)
         grid_res = AgGrid(
             display_df,
             gridOptions=gb.build(),
