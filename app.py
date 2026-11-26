@@ -673,8 +673,11 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         adat["szamlaszam"] = m_sz.group(1).strip()
     m_hk = re.search(r"Hőközpont\s*azonosító\s*:?\s*([A-Z0-9-]+)", rendezett_szoveg, re.I)
     m_az = re.search(r"Felhasználó\s*azonosító\s*száma\s*:?\s*([A-Z0-9\s-]+)", rendezett_szoveg, re.I)
+    m_az2 = re.search(r"Azonosító\s*:?\s*(\d{4,}-\d{4,})", szoveg)
     if m_hk:
         adat["pod"] = m_hk.group(1).strip()
+    elif m_az2:
+        adat["pod"] = m_az2.group(1).strip()
     elif m_az:
         adat["pod"] = m_az.group(1).strip()
     m_ido = re.search(r"Elszámol(?:ási|t)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\.?\s*[-–]+\s*(\d{4}\.\d{2}\.\d{2})\.?", rendezett_szoveg, re.I)
@@ -713,9 +716,9 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         if "bruttó számlaérték összesen" in s_low or "áfa összesítő" in s_low or "áfa táblázat" in s_low:
             break
         if s_low.startswith("kerekítés"):
-            szamok_k = re.findall(r"-?\d+", s)
+            szamok_k = re.findall(r"-?\d+(?:,\d+)?", s)
             if szamok_k:
-                komp_osszeg += int(szamok_k[-1])
+                komp_osszeg += int(round(_hu_szam(szamok_k[-1]) or 0))
             elozo_nev = ""
             continue
         if s_low.startswith("fizetendő") or "összesen" in s_low or "tétel megnevezése" in s_low or "számlarészletező" in s_low or re.match(r"^\d+\s*/\s*\d+\.?\s*oldal", s_low):
@@ -728,7 +731,7 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
             if not tiszta_sor:
                 continue
             utolso_nev_low = talalatok[-1]["Megnevezés"].lower() if talalatok else ""
-            elozo_tetel_folytatas = bool(talalatok) and not elozo_nev and (tiszta_sor[0].islower() or utolso_nev_low.endswith(("vagy", "mért", "arányos", "elszámolt")))
+            elozo_tetel_folytatas = bool(talalatok) and not elozo_nev and (tiszta_sor[0].islower() or utolso_nev_low.endswith(("vagy", "mért", "arányos", "elszámolt", "vízmérőn"))
             if elozo_tetel_folytatas:
                 talalatok[-1]["Megnevezés"] = f"{talalatok[-1]['Megnevezés']} {tiszta_sor}".strip()
                 continue
@@ -759,6 +762,11 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
             komp_osszeg = int(m_ker.group(1))
     if talalatok:
         df_eredmeny = pd.DataFrame(talalatok)
+        if adat["brutto"] != 0:
+            _, szam_br, _ = szamol_tetelek(df_eredmeny)
+            kul = int(adat["brutto"] - szam_br)
+            if abs(kul) <= 5:
+                komp_osszeg = kul
         if komp_osszeg != 0:
             komp_sor = pd.DataFrame([{"Megnevezés": "Bruttó díj kompenzáció", "Mennyiség": 1.0, "Mértékegység": "Ft", "Nettó egységár": 0.0, "ÁFA (%)": 0.0, "Bruttó összeg (Ft)": ft_szoveg(komp_osszeg)}])
             df_eredmeny = pd.concat([df_eredmeny, komp_sor], ignore_index=True)
