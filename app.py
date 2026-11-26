@@ -2,6 +2,7 @@ import base64
 import re
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
+from operator import itemgetter
 import altair as alt
 import fitz
 import pandas as pd
@@ -36,7 +37,6 @@ def formaz_ezres(kulcs):
     else:
         st.session_state[kulcs] = "-" if neg else ""
 
-
 def ft_szoveg(ertek):
     return f"{int(round(float(ertek))):,} Ft".replace(",", " ")
 
@@ -66,14 +66,8 @@ def honap_kulcs(cimke):
 st.markdown(
     """
     <style>
-    div[role="dialog"] {
-        width: 950px !important;
-        max-width: 92vw !important;
-    }
-    div[role="dialog"] [data-testid="stImage"] img {
-        width: 100% !important;
-        max-width: 100% !important;
-    }
+    div[role="dialog"] { width: 950px !important; max-width: 92vw !important; }
+    div[role="dialog"] [data-testid="stImage"] img { width: 100% !important; max-width: 100% !important; }
     </style>
     """,
     unsafe_allow_html=True
@@ -88,9 +82,6 @@ def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
         kep = oldal.get_pixmap(dpi=160)
         st.image(kep.tobytes("png"), caption=f"{idx + 1}. oldal", use_container_width=True)
     st.download_button("📥 PDF letöltése a gépre", data=pdf_bytes, file_name=pdf_utvonal, mime="application/pdf")
-
-
-
 
 def _hu_szam(szoveg):
     if not szoveg:
@@ -109,31 +100,12 @@ def _hu_szam(szoveg):
     except ValueError:
         return None
 
-SZOLGALTATO_SABLONOK = {
-    "ALTEO": {
-        "azonositok": ("alteo energiakereskedő", "17783893"),
-        "szolgaltato_nev_kulcs": "ALTEO",
-    },
-    "MVM": {
-        "azonositok": ("mvm next", "26713111", "mvmenergiakereskedo"),
-        "szolgaltato_nev_kulcs": "MVM",
-    },
-    "VIZMU": {
-        "azonositok": ("debreceni vízmű", "23458208", "tiszamenti regionális vízművek", "11265832", "trvzrt.hu", "érv. zrt", "érv zrt", "11069186", "ervzrt.hu", "nyírségvíz", "11492809", "nyirsegviz.hu", "drv zrt", "dunántúli regionális vízmű", "11226002", "drv.hu"),
-        "szolgaltato_nev_kulcs": "vízmű",
-    },
-    "TAVHO": {
-        "azonositok": ("debreceni hőszolgáltató", "23506088", "dhrt.hu", "távhőszolgáltatási számla", "nyírtávhő", "nyíregyházi távhőszolgáltató", "11241256", "nyirtavho.hu", "távhőszolgáltatási részszámla"),
-        "szolgaltato_nev_kulcs": "távhő",
-    }
-}
-
-
 def _vizszintes_sorok(oldal):
     szavak = oldal.get_text("words")
     if not szavak:
         return list()
-    rendezett = sorted(szavak, key=lambda w: (round(w[1] / 3.0), w[0]))
+    ix, iy = 0, 1
+    rendezett = sorted(szavak, key=lambda w: (round(w[iy] / 3.0), w[ix]))
     sorok = list()
     _, akt_y, *_ = next(iter(rendezett))
     akt_szavak = list()
@@ -142,7 +114,7 @@ def _vizszintes_sorok(oldal):
         if abs(y0 - akt_y) <= 3.5:
             akt_szavak.append((x0, x1, szo))
         else:
-            akt_szavak.sort(key=lambda item: item[0])
+            akt_szavak.sort(key=itemgetter(0))
             sor_reszek = list()
             elozo_x1 = None
             for sx0, sx1, sszo in akt_szavak:
@@ -154,7 +126,7 @@ def _vizszintes_sorok(oldal):
             akt_y = y0
             akt_szavak = [(x0, x1, szo)]
     if akt_szavak:
-        akt_szavak.sort(key=lambda item: item[0])
+        akt_szavak.sort(key=itemgetter(0))
         sor_reszek = list()
         elozo_x1 = None
         for sx0, sx1, sszo in akt_szavak:
@@ -170,18 +142,15 @@ def _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat):
     m_pod = re.search(r"(?:POD\s*:?\s*)?(39N[A-Z0-9]{10,})", szoveg, re.I)
     if m_pod:
         adat["pod"] = m_pod.group(1).strip()
-
     oldal_sorok = list()
     for oldal in dok:
         o_szoveg = oldal.get_text("text") or ""
         if "számlarészletezés" in re.sub(r"\s+", "", o_szoveg[:350].lower()):
             continue
         oldal_sorok.extend(_vizszintes_sorok(oldal))
-
     m_sz_teljes = re.search(r"Számlaszám\s*:?\s*(\d{6,})", szoveg)
     if m_sz_teljes:
         adat["szamlaszam"] = m_sz_teljes.group(1)
-
     for s in oldal_sorok:
         m_sz = re.search(r"Számlaszám[:\s]+(\d{6,})", s)
         if m_sz:
@@ -196,10 +165,7 @@ def _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat):
         m_h = re.search(r"Fizetési\s*határidő[:\s]+(\d{4}\.\d{2}\.\d{2})", s)
         if m_h:
             adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
-
-        rendezett_szoveg = "\n".join(oldal_sorok)
-    
-        rendezett_szoveg = "\n".join(oldal_sorok)
+    rendezett_szoveg = "\n".join(oldal_sorok)
     m_br = (
         re.search(r"Fizetendő\s*összesen\s*:?\s*([-−–]?\s*[\d\.\s\xa0]+(?:,\d{2})?)\s*Ft", rendezett_szoveg)
         or re.search(r"Fizetendő\s*összesen\s*:?\s*([-−–]?\s*[\d\.\s\xa0]+(?:,\d{2})?)\s*Ft", szoveg)
@@ -210,22 +176,18 @@ def _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat):
         br_val = _hu_szam(m_br.group(1))
         if br_val is not None:
             adat["brutto"] = int(round(br_val))
-
-
-        szam_minta = r"-?\d[\d\.]*,\d+"
+    szam_minta = r"-?\d[\d\.]*,\d+"
     egesz_vagy_tizedes = r"-?\d[\d\.]*(?:,\d+)?"
     me_minta = r"(kWh|MWh|csp|kW|kVAhr|db|hó|m3|MJ|GJ)"
     tetel_minta = re.compile(rf"^(.+?)\s+({szam_minta})\s+{me_minta}\s+({szam_minta})\s*Ft\s+({egesz_vagy_tizedes})\s+(27|5|18|0|AHK)\b")
     jovairo_minta = re.compile(rf"^(Részszámlákban\s+elszámolt\s+.+?)\s+({egesz_vagy_tizedes})\s+(27|5|18|0|AHK)\s+({szam_minta})\s+({szam_minta})\s*$")
     kizaro = ("összesen", "Tétel megnevezés", "Pénzeszközök", "Energia-jövedéki", "Rendszerhasználati", "Közbeszerzési díjak", "EKR díj", "Számlaszám", "Oldal:", "Forgalmi tételek")
-
     talalatok = list()
     for idx, s in enumerate(oldal_sorok):
         m = tetel_minta.match(s)
         mj = None if m else jovairo_minta.match(s)
         if not m and not mj:
             continue
-
         if m:
             nev = m.group(1).strip()
             menny = _hu_szam(m.group(2))
@@ -237,7 +199,6 @@ def _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat):
             netto_jovairo = _hu_szam(mj.group(2)) or 0.0
             afa_nyers = mj.group(3)
             nev_low = nev.lower()
-
             kapcsolodo = [
                 t for t in talalatok
                 if t["Mértékegység"] == "kWh" and t["Mennyiség"] > 0 and (
@@ -248,11 +209,10 @@ def _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat):
                     or ("jövedéki adó" in nev_low and "jövedéki adó" in t["Megnevezés"].lower())
                 )
             ]
-
             if kapcsolodo and netto_jovairo != 0:
                 ossz_menny_k = sum(t["Mennyiség"] for t in kapcsolodo)
                 ossz_netto_k = sum(t["Mennyiség"] * t["Nettó egységár"] for t in kapcsolodo)
-                sulyozott_ar = round(ossz_netto_k / ossz_menny_k, 5) if ossz_menny_k > 0 else kapcsolodo["Nettó egységár"]
+                sulyozott_ar = round(ossz_netto_k / ossz_menny_k, 5) if ossz_menny_k > 0 else next(iter(kapcsolodo))["Nettó egységár"]
                 me = "kWh"
                 ar = sulyozott_ar
                 menny = round(netto_jovairo / ar, 2) if ar != 0 else 1.0
@@ -260,62 +220,49 @@ def _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat):
                 menny = 1.0
                 me = "Ft"
                 ar = netto_jovairo
-
         afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
-
         if idx + 1 < len(oldal_sorok):
             kov = oldal_sorok[idx + 1].strip()
             if not tetel_minta.match(kov) and not jovairo_minta.match(kov) and not any(kz.lower() in kov.lower() for kz in kizaro) and not re.search(r"szolgáltatást tartalmaz", kov, re.I):
                 nev = f"{nev} {kov}".strip()
-
         if menny is not None and ar is not None:
             talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
-
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
 
-
 def _feldolgoz_alteo_pdf(dok, szoveg, adat):
+    if "földgáz" in szoveg.lower() or re.search(r"\b39N[A-Z0-9]{10,}\b", szoveg):
+        return _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat)
     adat["szolgaltato_kulcs"] = "ALTEO"
     osszes_sor = list()
     for oldal in dok:
         osszes_sor.extend(_vizszintes_sorok(oldal))
     rendezett_szoveg = "\n".join(osszes_sor)
-
     m_sz = re.search(r"Számlaszám\s*:?\s*([A-Z0-9/-]{6,})", rendezett_szoveg, re.I)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
-
     m_pod = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", rendezett_szoveg)
     if m_pod:
         adat["pod"] = m_pod.group(1).strip()
-
     m_ido = re.search(r"Időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
-
     m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
     if m_k:
         adat["kelte"] = datetime.strptime(m_k.group(1), "%Y.%m.%d").date()
-
     m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
     if m_h:
         adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
-
     m_br = re.search(r"Fizetendő\s*összesen\s*:?\s*(-?[\d\.\s\xa0]+(?:,\d+)?)\s*Ft", rendezett_szoveg, re.I)
     if m_br:
         br_val = _hu_szam(m_br.group(1))
         if br_val is not None:
             adat["brutto"] = int(round(br_val))
             adat["foszamla_brutto"] = adat["brutto"]
-
     szam_minta = r"-?\d{1,3}(?:\.\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
-    sor_re = re.compile(
-        rf"^(.+?)\s+({szam_minta})\s+([A-Za-z0-9³²/%]+)\s+({szam_minta})\s*Ft\s+({szam_minta})\s+(27|5|18|0|AHK)\s+({szam_minta})\s+({szam_minta})\s*$"
-    )
-
+    sor_re = re.compile(rf"^(.+?)\s+({szam_minta})\s+([A-Za-z0-9³²/%]+)\s+({szam_minta})\s*Ft\s+({szam_minta})\s+(27|5|18|0|AHK)\s+({szam_minta})\s+({szam_minta})\s*$")
     talalatok = list()
     for s in osszes_sor:
         s_low = s.lower().strip()
@@ -323,11 +270,9 @@ def _feldolgoz_alteo_pdf(dok, szoveg, adat):
             break
         if "összesen" in s_low or s_low.startswith("tétel megnevezés"):
             continue
-
         m = sor_re.match(s.strip())
         if not m:
             continue
-
         nev = m.group(1).strip(" -–:|")
         if "kapcsolt" in nev.lower() and "termelésszerk" not in nev.lower():
             nev = "Kapcsolt termelésszerk.-átalakítási díj"
@@ -337,35 +282,28 @@ def _feldolgoz_alteo_pdf(dok, szoveg, adat):
             nev = "Elosztói lekötött teljesítménydíj"
         elif "közbeszerzési díj" in nev.lower() and "alapján" not in nev.lower():
             nev = "Közbeszerzési díj villamosenergiadíj alapján"
-
         menny = _hu_szam(m.group(2))
         me = m.group(3).strip()
         ar = _hu_szam(m.group(4))
         afa_nyers = m.group(6).strip().upper()
         afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
-
         if menny is not None and ar is not None:
             talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
-
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
-
 
 def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
     blokk_szoveg = "\n".join(sorok)
     m_pod = re.search(r"(39N[A-Z0-9]{10,})", blokk_szoveg)
     pod = m_pod.group(1).strip() if m_pod else ""
-
     pod_tol, pod_ig = alap_tol, alap_ig
     m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\s+(\d{4}\.\d{2}\.\d{2})", blokk_szoveg)
     if m_ido:
         pod_tol = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         pod_ig = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
-
     szam_minta = r"-?\d{1,3}(?:[ .]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
     sor_re = re.compile(rf"(\d{{4}}\.\d{{2}}\.\d{{2}})\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s+({szam_minta})\s*(kWh/h|kWh|m3|m³|MJ|GJ|HUF|Ft|db|hó)\s+(.+?)\s+({szam_minta})\s+(\d{{1,2}})\b")
-
     talalatok = list()
     elozo_nev = ""
     for s in sorok:
@@ -379,24 +317,19 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
             if not re.search(r"\d", s_tisztitott) and 4 <= len(s_tisztitott) <= 60 and "összesen" not in s_tisztitott.lower() and "díjtétel" not in s_tisztitott.lower():
                 elozo_nev = s_tisztitott.strip(" -–:|")
             continue
-
         bal_nev = s_tisztitott[:m.start()].strip(" -–:|")
         menny = _hu_szam(m.group(3))
         me_nyers = m.group(4)
         kozepso = m.group(5)
         netto_oszlop = _hu_szam(m.group(6))
         afa = float(m.group(7))
-
-        alap_cimke = "RHD kapacitásdíj*" if me_nyers == "kWh/h" else ("Földgáz díjtétel" if me_nyers == "kWh" else "Földgáz díjtétel")
+        alap_cimke = "RHD kapacitásdíj*" if me_nyers == "kWh/h" else "Földgáz díjtétel"
         nev = bal_nev or elozo_nev or alap_cimke
         elozo_nev = ""
-
         kozep_szamok = re.findall(szam_minta, kozepso)
         ar = _hu_szam(next(iter(kozep_szamok))) if kozep_szamok else None
-
         if menny is None or ar is None:
             continue
-
         if "%" in kozepso or me_nyers in ("HUF", "Ft"):
             me = "%"
             ar = round(ar / 100.0, 6)
@@ -404,99 +337,13 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
             me = me_nyers.replace("m³", "m3")
             if netto_oszlop is not None and menny != 0 and abs((menny * ar) - netto_oszlop) > 5.0:
                 ar = round(netto_oszlop / menny, 6)
-
         talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
-
     tetelek_df = pd.DataFrame(talalatok) if talalatok else None
     pod_brutto = alap_brutto
     if pod_brutto == 0 and tetelek_df is not None:
         _, szam_br, _ = szamol_tetelek(tetelek_df)
         pod_brutto = int(szam_br)
-
     return {"pod": pod, "tol": pod_tol, "ig": pod_ig, "brutto": pod_brutto, "tetelek_df": tetelek_df}
-
-
-
-
-
-def _feldolgoz_mvm_gaz_pdf(dok, szoveg, adat):
-    adat["szolgaltato_kulcs"] = "MVM"
-    osszes_sor = list()
-    for oldal in dok:
-        szavak = oldal.get_text("words")
-        if not szavak:
-            continue
-        rendezett = sorted(szavak, key=_rendez_tavho_szo)
-        _, akt_y, *_ = next(iter(rendezett))
-        akt_sz = list()
-        for x0, y0, _, _, szo, *_ in rendezett:
-            if abs(y0 - akt_y) <= 6.5:
-                akt_sz.append((x0, szo))
-            else:
-                akt_sz.sort(key=_rendez_x_szo)
-                osszes_sor.append(" ".join(ss for _, ss in akt_sz))
-                akt_y = y0
-                akt_sz = [(x0, szo)]
-        if akt_sz:
-            akt_sz.sort(key=_rendez_x_szo)
-            osszes_sor.append(" ".join(ss for _, ss in akt_sz))
-
-    rendezett_szoveg = "\n".join(osszes_sor)
-
-    m_sz = re.search(r"Számla\s*száma\s*:?\s*([A-Z0-9/-]{6,})", rendezett_szoveg, re.I)
-    if m_sz:
-        adat["szamlaszam"] = m_sz.group(1).strip()
-
-    m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
-    if m_k:
-        adat["kelte"] = datetime.strptime(m_k.group(1), "%Y.%m.%d").date()
-
-    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
-    if m_h:
-        adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
-
-    m_br = re.search(r"Fizetendő\s*:?\s*([\d\.\s\xa0]+(?:,\d+)?)\s*Ft", rendezett_szoveg, re.I)
-    if m_br:
-        br_val = _hu_szam(m_br.group(1))
-        if br_val:
-            adat["brutto"] = int(round(br_val))
-            adat["foszamla_brutto"] = adat["brutto"]
-
-    pod_indulo_sorok = list()
-    for idx, s in enumerate(osszes_sor):
-        if re.search(r"39N[A-Z0-9]{10,}", s):
-            pod_indulo_sorok.append(idx)
-
-    if len(pod_indulo_sorok) > 1:
-        pod_adatok = dict()
-        for i, start_idx in enumerate(pod_indulo_sorok):
-            end_idx = pod_indulo_sorok[i + 1] if (i + 1 < len(pod_indulo_sorok)) else len(osszes_sor)
-            resz = _feldolgoz_mvm_gaz_pod_blokk(osszes_sor[start_idx:end_idx], adat["tol"], adat["ig"], 0)
-            if resz["pod"] and resz["tetelek_df"] is not None:
-                pod_adatok[resz["pod"]] = resz
-        if pod_adatok:
-            adat["pod_adatok"] = pod_adatok
-            elso_pod = next(iter(pod_adatok.values()))
-            adat["pod"] = elso_pod["pod"]
-            adat["brutto"] = elso_pod["brutto"]
-            adat["tol"] = elso_pod["tol"]
-            adat["ig"] = elso_pod["ig"]
-            adat["tetelek_df"] = elso_pod["tetelek_df"]
-    else:
-        resz_sorok = osszes_sor[pod_indulo_sorok[0]:] if pod_indulo_sorok else osszes_sor
-        resz = _feldolgoz_mvm_gaz_pod_blokk(resz_sorok, adat["tol"], adat["ig"], adat["brutto"])
-        if resz["pod"]:
-            adat["pod"] = resz["pod"]
-        if resz["tol"]:
-            adat["tol"] = resz["tol"]
-        if resz["ig"]:
-            adat["ig"] = resz["ig"]
-        if resz["tetelek_df"] is not None:
-            adat["tetelek_df"] = resz["tetelek_df"]
-
-    return adat
-
-
 
 def _feldolgoz_mvm_gaz_pdf(dok, szoveg, adat):
     adat["szolgaltato_kulcs"] = "MVM"
@@ -504,31 +351,25 @@ def _feldolgoz_mvm_gaz_pdf(dok, szoveg, adat):
     for oldal in dok:
         osszes_sor.extend(_vizszintes_sorok(oldal))
     rendezett_szoveg = "\n".join(osszes_sor)
-
     m_sz = re.search(r"Számla\s*száma\s*:?\s*([A-Z0-9/-]{6,})", rendezett_szoveg, re.I)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
-
     m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
     if m_k:
         adat["kelte"] = datetime.strptime(m_k.group(1), "%Y.%m.%d").date()
-
     m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
     if m_h:
         adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
-
     m_br = re.search(r"Fizetendő\s*:?\s*([\d\.\s\xa0]+(?:,\d+)?)\s*Ft", rendezett_szoveg, re.I)
     if m_br:
         br_val = _hu_szam(m_br.group(1))
         if br_val:
             adat["brutto"] = int(round(br_val))
             adat["foszamla_brutto"] = adat["brutto"]
-
     pod_indulo_sorok = list()
     for idx, s in enumerate(osszes_sor):
         if re.search(r"39N[A-Z0-9]{10,}", s):
             pod_indulo_sorok.append(idx)
-
     if len(pod_indulo_sorok) > 1:
         pod_adatok = dict()
         for i, start_idx in enumerate(pod_indulo_sorok):
@@ -545,8 +386,8 @@ def _feldolgoz_mvm_gaz_pdf(dok, szoveg, adat):
             adat["ig"] = elso_pod["ig"]
             adat["tetelek_df"] = elso_pod["tetelek_df"]
     else:
-        resz_sorok = osszes_sor[pod_indulo_sorok[0]:] if pod_indulo_sorok else osszes_sor
-        resz = _feldolgoz_mvm_gaz_pod_blokk(resz_sorok, adat["tol"], adat["ig"], adat["brutto"])
+        elso_idx = next(iter(pod_indulo_sorok), 0)
+        resz = _feldolgoz_mvm_gaz_pod_blokk(osszes_sor[elso_idx:], adat["tol"], adat["ig"], adat["brutto"])
         if resz["pod"]:
             adat["pod"] = resz["pod"]
         if resz["tol"]:
@@ -555,32 +396,24 @@ def _feldolgoz_mvm_gaz_pdf(dok, szoveg, adat):
             adat["ig"] = resz["ig"]
         if resz["tetelek_df"] is not None:
             adat["tetelek_df"] = resz["tetelek_df"]
-
     return adat
-
-    
 
 def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
     blokk_szoveg = "\n".join(sorok)
     m_pod = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", blokk_szoveg)
     pod = m_pod.group(1).strip() if m_pod else ""
-
     pod_tol, pod_ig = alap_tol, alap_ig
     m_ido = re.search(r"Elszámolt\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", blokk_szoveg, re.I)
     if m_ido:
         pod_tol = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         pod_ig = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
-
     szam_minta = r"-?\d{1,3}(?:[ .]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
     sor_re = re.compile(rf"^(.+?)\s+(\d{{4}}\.\d{{2}}\.\d{{2}})\s*[-–]\s*(\d{{4}}\.\d{{2}}\.\d{{2}})\s*({szam_minta})\s+({szam_minta})(?:\s+([A-ZÁÉÍÓÖŐÚÜŰ0-9/-]+))?\s+({szam_minta})\s*$")
-
     kizaro_eleje = ("összesen", "kereskedelmi díjak", "pénzeszközök", "közvetített szolgáltatás", "megnevezés", "áfa szerinti bontás", "mérő gyári", "mért időszak", "szerződésszám", "mérési pont", "fogyasztási hely", "telephelyre vonatkozó", "oldalak száma")
-
     akt_me = "kWh"
     akt_afa = 27.0
     talalatok = list()
     pod_brutto = 0
-
     for idx, s in enumerate(sorok):
         s_low = s.lower().strip()
         if "kereskedelmi díjak" in s_low:
@@ -611,7 +444,6 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
             akt_me = "kWh"
             akt_afa = 27.0
             continue
-
         if s_low.startswith("összesen") and idx > 0:
             kornyezet = " ".join(sorok[max(0, idx - 4):idx]).lower()
             if "áfa szerinti bontás" in kornyezet or "adóval növelt" in kornyezet:
@@ -621,34 +453,25 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
                     if val_b is not None and val_b != 0:
                         pod_brutto = int(round(val_b))
             continue
-
-
         if any(s_low.startswith(kz) for kz in kizaro_eleje):
             continue
-
         s_tiszta = re.sub(r"(\d{4}\.\d{2}\.\d{2}\s*[-–]\s*\d{4}\.\d{2}\.\d{2})(?=\d)", r"\1 ", s.strip())
         m = sor_re.match(s_tiszta)
         if not m:
             continue
-
         nev = m.group(1).strip(" -–:|")
         menny = _hu_szam(m.group(4))
         ar = _hu_szam(m.group(5))
         if menny is None or ar is None:
             continue
-
         if akt_me == "%":
             ar = round(ar / 100.0, 6)
-
         talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": akt_me, "Nettó egységár": ar, "ÁFA (%)": akt_afa})
-
     tetelek_df = pd.DataFrame(talalatok) if talalatok else None
     if pod_brutto == 0 and tetelek_df is not None:
         _, szam_br, _ = szamol_tetelek(tetelek_df)
         pod_brutto = int(szam_br) if szam_br > 0 else alap_brutto
-
     return {"pod": pod, "tol": pod_tol, "ig": pod_ig, "brutto": pod_brutto, "tetelek_df": tetelek_df}
-
 
 def _feldolgoz_mvm_pdf(dok, szoveg, adat):
     if "földgáz" in szoveg.lower() or re.search(r"\b39N[A-Z0-9]{10,}\b", szoveg):
@@ -659,26 +482,21 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
         osszes_sor.extend(_vizszintes_sorok(oldal))
     rendezett_szoveg = "\n".join(osszes_sor)
     teljes_kereso = f"{szoveg}\n{rendezett_szoveg}"
-
     m_sz = re.search(r"Számla\s*(?:száma|sorszáma)\s*:?\s*([A-Z0-9/-]{6,})", teljes_kereso, re.I)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
-
     m_ido = re.search(r"Áramdíj\s*és\s*egyéb\s*díjak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", teljes_kereso, re.I)
     if not m_ido:
         m_ido = re.search(r"(?:Elszámolási|Elszámolt|Teljesítési)\s*időszak(?:ok)?\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", teljes_kereso, re.I)
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
-
     m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4}\.\d{2}\.\d{2})", teljes_kereso, re.I)
     if m_k:
         adat["kelte"] = datetime.strptime(m_k.group(1), "%Y.%m.%d").date()
-
     m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4}\.\d{2}\.\d{2})", teljes_kereso, re.I)
     if m_h:
         adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
-
     m_br = re.search(r"Fizetendő(?:\s*összeg)?\s*:?\s*(-?[\d\.\s\xa0]+(?:,\d+)?)\s*Ft", teljes_kereso, re.I)
     if m_br:
         br_val = _hu_szam(m_br.group(1))
@@ -692,13 +510,10 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
             if br_val is not None and br_val != 0:
                 adat["brutto"] = int(round(br_val))
                 adat["foszamla_brutto"] = adat["brutto"]
-
-    # Egyetemes szolgáltatású (ESZ) lakossági MVM Next sablon felismerése
     if "egyetemes szolgáltatás" in szoveg.lower() or re.search(r"Ft/(?:kWh|hó|kW)", teljes_kereso):
         m_pod_esz = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", teljes_kereso)
         if m_pod_esz:
             adat["pod"] = m_pod_esz.group(1).strip()
-
         egyes_szam = r"-?\d{1,3}(?:[\s\xa0.]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?"
         esz_minta = re.compile(
             rf"^(.+?)\s+\d{{4}}\.\d{{2}}\.\d{{2}}\s*[-–]\s*\d{{4}}\.\d{{2}}\.\d{{2}}\s+({egyes_szam})\s+(kWh|hó|kW|db)\s+({egyes_szam})\s*Ft/(?:kWh|hó|kW|db)\s+({egyes_szam})\s+(27|5|18|0|AHK)\s+({egyes_szam})\s*$"
@@ -723,12 +538,10 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
         if esz_tetelek:
             adat["tetelek_df"] = pd.DataFrame(esz_tetelek)
             return adat
-
     pod_indulo_sorok = list()
     for idx, s in enumerate(osszes_sor):
         if re.search(r"HU\d{6}[-A-Z0-9]{10,}", s):
             pod_indulo_sorok.append(idx)
-
     if len(pod_indulo_sorok) > 1:
         pod_adatok = dict()
         for i, start_idx in enumerate(pod_indulo_sorok):
@@ -745,34 +558,15 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
             adat["ig"] = elso_pod["ig"]
             adat["tetelek_df"] = elso_pod["tetelek_df"]
     else:
-        resz_sorok = osszes_sor[pod_indulo_sorok:] if pod_indulo_sorok else osszes_sor
-        resz = _feldolgoz_mvm_pod_blokk(resz_sorok, adat["tol"], adat["ig"], adat["brutto"])
+        elso_idx = next(iter(pod_indulo_sorok), 0)
+        resz = _feldolgoz_mvm_pod_blokk(osszes_sor[elso_idx:], adat["tol"], adat["ig"], adat["brutto"])
         if resz["pod"]:
             adat["pod"] = resz["pod"]
         if resz["tetelek_df"] is not None:
             adat["tetelek_df"] = resz["tetelek_df"]
         if resz["brutto"] > 0 and adat["brutto"] == 0:
             adat["brutto"] = resz["brutto"]
-
     return adat
-
-
-
-
-
-
-def _rendez_yx_szo(elem):
-    x0, y0, _ = elem
-    return (round(y0 / 3.0), x0)
-
-def _rendez_x_szo(elem):
-    x0, _ = elem
-    return x0
-
-def _rendez_sor_x_szo(elem):
-    sor_y, x0, _ = elem
-    return (sor_y, x0)
-
 def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
     szoveg_low = szoveg.lower()
     if "tiszamenti" in szoveg_low or "11265832" in szoveg_low or "trvzrt" in szoveg_low:
@@ -785,39 +579,31 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         adat["szolgaltato_kulcs"] = "drv"
     else:
         adat["szolgaltato_kulcs"] = "debreceni vízmű"
-
     osszes_sor = list()
     for oldal in dok:
         osszes_sor.extend(_vizszintes_sorok(oldal))
     rendezett_szoveg = "\n".join(osszes_sor)
-
     m_sz = re.search(r"Számla\s*sorszáma\s*:?\s*([A-Z0-9/-]{6,})", rendezett_szoveg, re.I)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
-
     m_hk = re.search(r"Hőközpont\s*azonosító\s*:?\s*([A-Z0-9-]+)", rendezett_szoveg, re.I)
     m_az = re.search(r"Felhasználó\s*azonosító\s*száma\s*:?\s*([A-Z0-9\s-]+)", rendezett_szoveg, re.I)
     if m_hk:
         adat["pod"] = m_hk.group(1).strip()
     elif m_az:
         adat["pod"] = m_az.group(1).strip()
-
     m_ido = re.search(r"Elszámol(?:ási|t)\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\.?\s*[-–]+\s*(\d{4}\.\d{2}\.\d{2})\.?", rendezett_szoveg, re.I)
     if not m_ido:
         m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\.?\s*[-–\s]+\s*(\d{4}\.\d{2}\.\d{2})\.?", rendezett_szoveg)
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
-
-
     m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", rendezett_szoveg, re.I)
     if m_k:
         adat["kelte"] = date(int(m_k.group(1)), int(m_k.group(2)), int(m_k.group(3)))
-
     m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4})\.\s*(\d{2})\.\s*(\d{2})", rendezett_szoveg, re.I)
     if m_h:
         adat["hatarido"] = date(int(m_h.group(1)), int(m_h.group(2)), int(m_h.group(3)))
-
     for s in osszes_sor:
         m_br = re.search(r"Fizetendő\s*összeg\s*:?\s*(-?[\d\.\s\xa0]+(?:,\d+)?)\s*Ft\b", s, re.I)
         if m_br:
@@ -825,18 +611,15 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
             if br_val is not None and br_val != 0:
                 adat["brutto"] = int(round(br_val))
                 break
-
     egyes_szam = r"-?\d{1,3}(?:[ .]\d{3})+(?:[.,]\d+)?|-?\d+(?:[.,]\d+)?"
     me_minta = r"(m3|m³|hó|db|lm3)"
     tetel_minta = re.compile(rf"({egyes_szam})\s*{me_minta}\s+({egyes_szam})\s*Ft(?:/[A-Za-z0-9³]+)?(?:\s+({egyes_szam}))?(?:\s+(27|5|18|0|AHK)\b)?")
     ar_only_minta = re.compile(rf"({egyes_szam})\s*Ft/({me_minta})(?:\s+({egyes_szam}))?(?:\s+(27|5|18|0|AHK)\b)?")
-
     def _tisztit_vizmu_nev(nyers):
         t = re.sub(r"\d{4}\.\d{2}\.\d{2}\.?\s*[-–]?\s*(?:\d{4}\.\d{2}\.\d{2}\.?)?", "", nyers)
         t = re.sub(r"\b\d+\s*-\s*\d*\b", "", t)
         t = re.sub(r"(?<!-)\b\d{1,6}\b", "", t)
         return re.sub(r"\s+", " ", t).strip(" -–:|")
-
     talalatok = list()
     elozo_nev = ""
     komp_osszeg = 0
@@ -844,43 +627,29 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         s_low = s.lower().strip()
         if "bruttó számlaérték összesen" in s_low or "áfa összesítő" in s_low or "áfa táblázat" in s_low:
             break
-
         if s_low.startswith("kerekítés"):
             szamok_k = re.findall(r"-?\d+", s)
             if szamok_k:
                 komp_osszeg += int(szamok_k[-1])
             elozo_nev = ""
             continue
-
-        if (
-            s_low.startswith("fizetendő")
-            or "összesen" in s_low
-            or "tétel megnevezése" in s_low
-            or "számlarészletező" in s_low
-            or re.match(r"^\d+\s*/\s*\d+\.?\s*oldal", s_low)
-        ):
+        if s_low.startswith("fizetendő") or "összesen" in s_low or "tétel megnevezése" in s_low or "számlarészletező" in s_low or re.match(r"^\d+\s*/\s*\d+\.?\s*oldal", s_low):
             elozo_nev = ""
             continue
-
         m = tetel_minta.search(s)
         m_ar = None if m else ar_only_minta.search(s)
-
         if not m and not m_ar:
             tiszta_sor = _tisztit_vizmu_nev(s)
             if not tiszta_sor:
                 continue
             utolso_nev_low = talalatok[-1]["Megnevezés"].lower() if talalatok else ""
-            elozo_tetel_folytatas = bool(talalatok) and not elozo_nev and (
-                tiszta_sor[0].islower()
-                or utolso_nev_low.endswith(("vagy", "mért", "arányos", "elszámolt"))
-            )
+            elozo_tetel_folytatas = bool(talalatok) and not elozo_nev and (tiszta_sor[0].islower() or utolso_nev_low.endswith(("vagy", "mért", "arányos", "elszámolt")))
             if elozo_tetel_folytatas:
                 talalatok[-1]["Megnevezés"] = f"{talalatok[-1]['Megnevezés']} {tiszta_sor}".strip()
                 continue
             if len(tiszta_sor) >= 4 and any(k in tiszta_sor.lower() for k in ("vízmérő", "mérőn", "részszámlában", "ivóvíz", "szennyvíz", "vízterhelési", "alapdíj", "díj", "átalány", "áthárított")):
                 elozo_nev = f"{elozo_nev} {tiszta_sor}".strip()
             continue
-
         if m:
             bal_resz = _tisztit_vizmu_nev(s[:m.start()])
             nev = f"{elozo_nev} {bal_resz}".strip() or "Víziközmű díjtétel"
@@ -895,18 +664,14 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
             me = m_ar.group(2).replace("m³", "m3")
             ar = _hu_szam(m_ar.group(1))
             afa_nyers = m_ar.group(5)
-
         elozo_nev = ""
         afa = 27.0 if not afa_nyers else (0.0 if afa_nyers == "AHK" else float(afa_nyers))
-
         if menny is not None and ar is not None:
             talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
-
     if komp_osszeg == 0:
         m_ker = re.search(r"Kerekítés\s*\(?ÁFA\)?\s*(-?\d+)", szoveg, re.I)
         if m_ker:
             komp_osszeg = int(m_ker.group(1))
-
     if talalatok:
         df_eredmeny = pd.DataFrame(talalatok)
         if komp_osszeg != 0:
@@ -915,35 +680,25 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
         adat["tetelek_df"] = df_eredmeny
     return adat
 
-
-
-def _rendez_tavho_szo(w):
-    x0, y0, *_ = w
-    return (y0, x0)
-
 def _feldolgoz_tavho_pdf(dok, szoveg, adat):
     import calendar
     szoveg_low = szoveg.lower()
     is_nyirtavho = ("nyírtávhő" in szoveg_low or "nyíregyházi távhő" in szoveg_low or "11241256" in szoveg_low)
     adat["szolgaltato_kulcs"] = "nyírtávhő" if is_nyirtavho else "debreceni hőszolgáltató"
-
     osszes_sor = list()
     for oldal in dok:
         osszes_sor.extend(_vizszintes_sorok(oldal))
     rendezett_szoveg = "\n".join(osszes_sor)
     teljes_kereso = f"{szoveg}\n{rendezett_szoveg}"
-
     m_sz = re.search(r"Számla\s*sorszáma\s*:?\s*([A-Z0-9/-]{5,})", teljes_kereso, re.I)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
-
     m_hk = re.search(r"Hőközpont\s*azonosító\s*:?\s*(?:Fűtés\s*:?\s*)?([A-Z0-9/-]+)", teljes_kereso, re.I)
     m_az = re.search(r"Felhasználó\s*azonosító\s*száma\s*:?\s*([A-Z0-9-]+)", teljes_kereso, re.I)
     if m_hk and m_hk.group(1).strip():
         adat["pod"] = m_hk.group(1).strip()
     elif m_az:
         adat["pod"] = m_az.group(1).strip()
-
     m_ido4 = re.search(r"(\d{4}\.\d{2}\.\d{2})\.?\s*[-–]+\s*(\d{4}\.\d{2}\.\d{2})\.?", teljes_kereso)
     if m_ido4:
         adat["tol"] = datetime.strptime(m_ido4.group(1), "%Y.%m.%d").date()
@@ -960,26 +715,19 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
                 _, utolso_nap = calendar.monthrange(ev, ho)
                 adat["tol"] = date(ev, ho, 1)
                 adat["ig"] = date(ev, ho, utolso_nap)
-
     m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4}\.\d{2}\.\d{2})", teljes_kereso, re.I)
     if m_k:
         adat["kelte"] = datetime.strptime(m_k.group(1), "%Y.%m.%d").date()
-
     m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4}\.\d{2}\.\d{2})", teljes_kereso, re.I)
     if m_h:
         adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
-
     m_br = re.search(r"Fizetendő\s*összeg(?:\s*összesen\s*\(Ft\))?\s*:?\s*(-?[\d\.\s\xa0]+(?:,\d+)?)", teljes_kereso, re.I)
     if m_br:
         br_val = _hu_szam(m_br.group(1))
         if br_val is not None and br_val != 0:
             adat["brutto"] = int(round(br_val))
-
     egyes_szam = r"-?\d{1,3}(?:[\s\xa0.]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?"
-    tetel_minta = re.compile(
-        rf"({egyes_szam})[\s\xa0]*(MW|kW|MWh|kWh|GJ|MJ|m3|m³|hó|db)[\s\xa0]+({egyes_szam})[\s\xa0]*Ft(?:/[A-Za-z0-9³]+)?(?:[\s\xa0]+({egyes_szam}))?(?:[\s\xa0]+(5|27|18|0|AHK)\b)?"
-    )
-
+    tetel_minta = re.compile(rf"({egyes_szam})[\s\xa0]*(MW|kW|MWh|kWh|GJ|MJ|m3|m³|hó|db)[\s\xa0]+({egyes_szam})[\s\xa0]*Ft(?:/[A-Za-z0-9³]+)?(?:[\s\xa0]+({egyes_szam}))?(?:[\s\xa0]+(5|27|18|0|AHK)\b)?")
     def _kinyer_tetel_sorbol(s, akt_szekcio):
         m = tetel_minta.search(s)
         if not m:
@@ -992,23 +740,17 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
         elif not bal_resz and "hődíj" in s.lower():
             bal_resz = "Hődíj"
         nev = f"{akt_szekcio} - {bal_resz}".strip(" -") if (akt_szekcio and bal_resz) else (bal_resz or "Távhő díjtétel")
-
         menny = _hu_szam(m.group(1))
         me = m.group(2).replace("m³", "m3")
         ar = _hu_szam(m.group(3))
         netto_pdf = _hu_szam(m.group(4)) if m.group(4) else None
         afa_nyers = m.group(5)
-        if afa_nyers:
-            afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
-        else:
-            afa = 5.0 if me in ("MW", "kW", "MWh", "kWh", "GJ", "MJ") else 27.0
-
+        afa = (0.0 if afa_nyers == "AHK" else float(afa_nyers)) if afa_nyers else (5.0 if me in ("MW", "kW", "MWh", "kWh", "GJ", "MJ") else 27.0)
         if menny is None or ar is None:
             return None
         if netto_pdf is not None and menny != 0 and abs((menny * ar / 12.0) - netto_pdf) <= 2.0:
             ar = round(netto_pdf / menny, 6)
         return {"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa}
-
     talalatok = list()
     akt_szekcio = ""
     for s in osszes_sor:
@@ -1019,49 +761,30 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
             akt_szekcio = "Vízfelmelegítési"
         elif "víziközmű" in s_low:
             akt_szekcio = "Víziközmű"
-
         if "bruttó számlaérték összesen" in s_low or "áfa összesítő" in s_low or "hőközponti és épület" in s_low:
             break
         if "összesen" in s_low or s_low.startswith("kerekítés") or s_low.startswith("tétel"):
             continue
-
         tetel = _kinyer_tetel_sorbol(s, akt_szekcio)
         if tetel:
             talalatok.append(tetel)
-
     if not talalatok:
-        reszletezo_szoveg = szoveg.split("Bruttó számlaérték összesen")[0]
+        reszletezo_szoveg = next(iter(szoveg.split("Bruttó számlaérték összesen")))
         for m in tetel_minta.finditer(reszletezo_szoveg):
             kontextus = reszletezo_szoveg[max(0, m.start() - 120):m.end()]
             tetel = _kinyer_tetel_sorbol(kontextus, "Fűtési célú" if "fűtési célú" in kontextus.lower() else "")
             if tetel:
                 talalatok.append(tetel)
-
     if talalatok:
         adat["tetelek_df"] = pd.DataFrame(talalatok)
     return adat
-
-
-
 
 def feldolgoz_pdf(fajl):
     pdf_bytes = fajl.getvalue() if hasattr(fajl, "getvalue") else fajl
     dok = fitz.open(stream=pdf_bytes, filetype="pdf")
     szoveg = "\n".join(oldal.get_text("text") for oldal in dok)
     szoveg_low = szoveg.lower()
-
-    adat = {
-        "szamlaszam": "",
-        "pod": "",
-        "tol": date.today().replace(day=1),
-        "ig": date.today(),
-        "kelte": date.today(),
-        "hatarido": date.today(),
-        "brutto": 0,
-        "szolgaltato_kulcs": "",
-        "tetelek_df": None
-    }
-
+    adat = {"szoveg": szoveg, "szamlaszam": "", "pod": "", "tol": date.today().replace(day=1), "ig": date.today(), "kelte": date.today(), "hatarido": date.today(), "brutto": 0, "szolgaltato_kulcs": "", "tetelek_df": None}
     if "mvm next" in szoveg_low or "mvmnext" in szoveg_low or "26713111" in szoveg_low or "10700024-71534116" in szoveg_low:
         return _feldolgoz_mvm_pdf(dok, szoveg, adat)
     elif "alteo" in szoveg_low or "13245053" in szoveg_low:
@@ -1070,13 +793,7 @@ def feldolgoz_pdf(fajl):
         return _feldolgoz_tavho_pdf(dok, szoveg, adat)
     elif any(k in szoveg_low for k in ("vízmű", "víziközmű", "tiszamenti", "nyírségvíz", "drv zrt", "érv zrt", "érv. zrt", "11265832", "11069186", "11492809", "11226002")):
         return _feldolgoz_vizmu_pdf(dok, szoveg, adat)
-    elif any(k in szoveg_low for k in ("e.on", "eon", "opus titász", "titász", "mvm démász", "elmű", "émász")):
-        for fn_nev in ("_feldolgoz_eon_pdf", "_feldolgoz_opus_pdf", "_feldolgoz_titasz_pdf"):
-            if fn_nev in globals():
-                return globals()[fn_nev](dok, szoveg, adat)
     return _feldolgoz_mvm_pdf(dok, szoveg, adat)
-
-
 
 def get_helyek(uid):
     ma = date.today().isoformat()
@@ -1110,15 +827,12 @@ def szamol_tetelek(df):
                 ossz_brutto += Decimal(br_ertek)
                 tetelek.append({"megnevezes_eredeti": megn_str, "mennyiseg": 1.0, "mertekegyseg": "Ft", "egysegar_netto": 0.0, "szamitott_netto": 0.0, "afa_kulcs": 0.0, "szamitott_brutto": float(br_ertek)})
             continue
-
-
         m_val = row.get("Mennyiség")
         a_val = row.get("Nettó egységár")
         if m_val is None or a_val is None or pd.isna(m_val) or pd.isna(a_val):
             continue
         menny = Decimal(str(m_val))
         ar = Decimal(str(a_val))
-        
         afa_val = row.get("ÁFA (%)")
         afa = Decimal(str(afa_val)) if (afa_val is not None and not pd.isna(afa_val)) else Decimal("27.0")
         netto = (menny * ar).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
@@ -1139,7 +853,6 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl, gyujto_marad=False):
                 st.warning("⚠️ Ez a felhasználási hely (POD) már rögzítve van ehhez a számlaszámhoz! Válaszd a következő mérési pontot a fenti legördülő listából.")
                 return
             raise ins_hiba
-
         sid = next(iter(res.data))["id"]
         for t in tetelek:
             t["szamla_id"] = sid
@@ -1157,9 +870,6 @@ def mentes_adatbazisba(uj_szamla, tetelek, fajl, gyujto_marad=False):
     except Exception as hiba:
         st.error(f"Pontos hiba oka: {hiba}")
 
-
-
-
 def mutat_helyettesitesek():
     st.header("🔄 Helyettesítések kezelése")
     osszes_user = supabase.table("energetikusok").select("*").order("nev").execute().data or list()
@@ -1167,7 +877,6 @@ def mutat_helyettesitesek():
     aktiv_user_opciok = {f"{u['nev']} ({u['szerepkor']})": u["id"] for u in osszes_user if u.get("aktiv")}
     osszes_hely = supabase.table("felhasznalasi_helyek").select("*").order("megnevezes").execute().data or list()
     h_map = {h["id"]: h["megnevezes"] for h in osszes_hely}
-
     helyett_lista = supabase.table("helyettesitesek").select("*").order("kezdet_datum", desc=True).execute().data or list()
     if helyett_lista:
         h_sorok = list({"ID": x["id"], "Helyettesített": u_map.get(x["helyettesitett_energetikus_id"], ""), "Helyettesítő": u_map.get(x["helyettesito_energetikus_id"], ""), "Felhasználási hely": h_map.get(x["felhasznalasi_hely_id"], "Minden telephelye"), "Kezdet": x["kezdet_datum"], "Vége": x["vege_datum"]} for x in helyett_lista)
@@ -1177,7 +886,6 @@ def mutat_helyettesitesek():
             hid = int(next(iter(torol_h.split(" – "))).replace("#", ""))
             supabase.table("helyettesitesek").delete().eq("id", hid).execute()
             st.rerun()
-
     st.subheader("➕ Új helyettesítés rögzítése")
     with st.form("uj_helyettesites_form"):
         hc1, hc2 = st.columns(2)
@@ -1203,9 +911,7 @@ def mutat_torzsadatok():
     osszes_hely = supabase.table("felhasznalasi_helyek").select("*").order("megnevezes").execute().data or list()
     osszes_szolg = supabase.table("szolgaltatok").select("*").order("nev").execute().data or list()
     energia_opciok = list(("Villamos energia", "Földgáz", "Távhő", "Víziközmű", "PB-gáz"))
-
     t_hely, t_user, t_szolg = st.tabs(list(("🏭 Felhasználási helyek", "👤 Energetikusok", "🏢 Szolgáltatók")))
-
     with t_hely:
         if osszes_hely:
             st.caption("💡 Kattints duplán a cellákra a **Megnevezés**, **Energiatípus**, **POD / EIC**, **Felelős**, **Állandó helyettes** vagy **Aktív** mezők módosításához!")
@@ -1213,14 +919,12 @@ def mutat_torzsadatok():
             for u in osszes_user:
                 nev_to_id[u["nev"]] = u["id"]
             user_nevek = list(nev_to_id.keys())
-
             h_sorok = list()
             for h in osszes_hely:
                 fel_nev = u_map.get(h.get("felelos_energetikus_id")) or "Nincs kijelölve"
                 helyett_nev = u_map.get(h.get("allando_helyettes_id")) or "Nincs kijelölve"
                 e_tipus = h.get("energiatipus") if h.get("energiatipus") in energia_opciok else "Villamos energia"
                 h_sorok.append({"ID": h["id"], "Megnevezés": h["megnevezes"], "Energiatípus": e_tipus, "POD / EIC": h["pod_eic_azonosito"], "Felelős": fel_nev, "Állandó helyettes": helyett_nev, "Aktív": bool(h.get("aktiv", True))})
-
             szerk_hely_df = st.data_editor(
                 pd.DataFrame(h_sorok),
                 use_container_width=True,
@@ -1234,7 +938,6 @@ def mutat_torzsadatok():
                 },
                 key="torzs_hely_editor"
             )
-
             if st.button("💾 Felhasználási helyek módosításainak mentése", type="primary"):
                 eredeti_h = {h["id"]: h for h in osszes_hely}
                 modositva = 0
@@ -1276,7 +979,6 @@ def mutat_torzsadatok():
                                 st.warning("⚠️ Meglévő felhasználási hely: ezzel a POD / EIC azonosítóval már rögzítve van telephely a rendszerben!")
                             else:
                                 st.error(f"Adatbázis hiba: {hiba}")
-
         if osszes_hely:
             st.divider()
             st.subheader("🗑️ Felhasználási hely törlése")
@@ -1309,9 +1011,6 @@ def mutat_torzsadatok():
                         st.session_state.pop("h_torles_megerosites_id", None)
                         st.session_state["hely_torles_ver"] = h_ver + 1
                         st.rerun()
-
-
-
     with t_user:
         szerep_opciok = list(("Energetikus", "Vezető energetikus", "Adminisztrátor"))
         if osszes_user:
@@ -1322,10 +1021,7 @@ def mutat_torzsadatok():
                 use_container_width=True,
                 hide_index=True,
                 disabled=list(("ID",)),
-                column_config={
-                    "Szerepkör": st.column_config.SelectboxColumn("Szerepkör", options=szerep_opciok, required=True),
-                    "Aktív": st.column_config.CheckboxColumn("Aktív")
-                },
+                column_config={"Szerepkör": st.column_config.SelectboxColumn("Szerepkör", options=szerep_opciok, required=True), "Aktív": st.column_config.CheckboxColumn("Aktív")},
                 key="torzs_user_editor"
             )
             if st.button("💾 Energetikusok módosításainak mentése", type="primary"):
@@ -1345,7 +1041,6 @@ def mutat_torzsadatok():
                     st.rerun()
                 else:
                     st.info("Nem történt változás a táblázatban.")
-
         with st.expander("➕ Új energetikus hozzáadása"):
             with st.form("uj_user_form"):
                 uc1, uc2 = st.columns(2)
@@ -1357,7 +1052,6 @@ def mutat_torzsadatok():
                         uj_adat["email"] = f"{re.sub(r'[^a-z0-9]', '', uj_u_nev.lower())}@ceg.hu"
                     supabase.table("energetikusok").insert(uj_adat).execute()
                     st.rerun()
-
         if osszes_user:
             st.divider()
             st.subheader("🗑️ Energetikus törlése")
@@ -1390,7 +1084,6 @@ def mutat_torzsadatok():
                         st.session_state.pop("u_torles_megerosites_id", None)
                         st.session_state["user_torles_ver"] = u_ver + 1
                         st.rerun()
-
             st.divider()
             st.subheader("🔀 Telephelyek szétosztása energetikusok között")
             rendezett_userek = sorted(osszes_user, key=lambda x: (bool(x.get("aktiv")), x["nev"]))
@@ -1399,7 +1092,6 @@ def mutat_torzsadatok():
                 szuro_opciok[f"{u['nev']} [{'Inaktív' if not u.get('aktiv') else 'Aktív'}]"] = u["id"]
             val_szuro = st.selectbox("Kinek a telephelyeit szeretnéd szétosztani?", list(szuro_opciok.keys()))
             szurt_forras_id = szuro_opciok[val_szuro]
-
             szurt_helyek = osszes_hely if szurt_forras_id is None else list(h for h in osszes_hely if h.get("felelos_energetikus_id") == szurt_forras_id or h.get("allando_helyettes_id") == szurt_forras_id)
             if not szurt_helyek:
                 st.info("A kiválasztott szűrőhöz nem tartozik felhasználási hely.")
@@ -1410,7 +1102,6 @@ def mutat_torzsadatok():
                     if u.get("aktiv"):
                         nev_to_id_akt[u["nev"]] = u["id"]
                 valaszthato_nevek = list(nev_to_id_akt.keys())
-
                 kiosztas_sorok = list()
                 for h in szurt_helyek:
                     fel_nev = u_map.get(h.get("felelos_energetikus_id")) or "Nincs kijelölve"
@@ -1420,19 +1111,14 @@ def mutat_torzsadatok():
                     if helyett_nev not in valaszthato_nevek:
                         valaszthato_nevek.append(helyett_nev)
                     kiosztas_sorok.append({"ID": h["id"], "Megnevezés": h["megnevezes"], "Energiatípus": h.get("energiatipus") or "", "POD / EIC": h["pod_eic_azonosito"], "Felelős energetikus": fel_nev, "Állandó helyettes": helyett_nev})
-
                 szerk_kiosztas = st.data_editor(
                     pd.DataFrame(kiosztas_sorok),
                     use_container_width=True,
                     hide_index=True,
                     disabled=list(("ID", "Megnevezés", "Energiatípus", "POD / EIC")),
-                    column_config={
-                        "Felelős energetikus": st.column_config.SelectboxColumn("Felelős energetikus", options=valaszthato_nevek, required=True),
-                        "Állandó helyettes": st.column_config.SelectboxColumn("Állandó helyettes", options=valaszthato_nevek, required=True)
-                    },
+                    column_config={"Felelős energetikus": st.column_config.SelectboxColumn("Felelős energetikus", options=valaszthato_nevek, required=True), "Állandó helyettes": st.column_config.SelectboxColumn("Állandó helyettes", options=valaszthato_nevek, required=True)},
                     key=f"kiosztas_ed_{szurt_forras_id}"
                 )
-
                 if st.button("💾 Telephely-kiosztás mentése", type="primary"):
                     eredeti_map = {h["id"]: h for h in szurt_helyek}
                     modositva = 0
@@ -1448,7 +1134,6 @@ def mutat_torzsadatok():
                         st.rerun()
                     else:
                         st.info("Nem történt változás a kiosztásban.")
-
     with t_szolg:
         if osszes_szolg:
             st.caption("💡 Kattints duplán a szolgáltató **Név** vagy **Energiatípus** cellájára a módosításhoz!")
@@ -1458,9 +1143,7 @@ def mutat_torzsadatok():
                 use_container_width=True,
                 hide_index=True,
                 disabled=list(("ID",)),
-                column_config={
-                    "Energiatípus": st.column_config.SelectboxColumn("Energiatípus", options=energia_opciok, required=True)
-                },
+                column_config={"Energiatípus": st.column_config.SelectboxColumn("Energiatípus", options=energia_opciok, required=True)},
                 key="torzs_szolg_editor"
             )
             if st.button("💾 Szolgáltatók módosításainak mentése", type="primary"):
@@ -1479,7 +1162,6 @@ def mutat_torzsadatok():
                     st.rerun()
                 else:
                     st.info("Nem történt változás a táblázatban.")
-
         with st.expander("➕ Új szolgáltató hozzáadása"):
             with st.form("uj_szolg_form"):
                 sc1, sc2 = st.columns(2)
@@ -1491,7 +1173,6 @@ def mutat_torzsadatok():
                         st.rerun()
                     except Exception as hiba:
                         st.error(f"Adatbázis hiba: {hiba}")
-
         if osszes_szolg:
             st.divider()
             st.subheader("🗑️ Szolgáltató törlése")
@@ -1523,15 +1204,12 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
     szamlak_data = supabase.table("szamlak").select("*").order("id", desc=True).execute().data or list()
     helyek_data = supabase.table("felhasznalasi_helyek").select("id, megnevezes, energiatipus").execute().data or list()
     szolg_data = supabase.table("szolgaltatok").select("id, nev").execute().data or list()
-
     h_map = {h["id"]: h["megnevezes"] for h in helyek_data}
     h_energia_map = {h["id"]: (h.get("energiatipus") or "Villamos energia") for h in helyek_data}
     s_map = {s["id"]: s["nev"] for s in szolg_data}
-
     if not szamlak_data:
         st.info("Még nincs rögzített számla az adatbázisban.")
         return None, None, None, None, None, None, None
-
     akt_uid = st.session_state.get("akt_user_id")
     osszes_mutatasa = st.checkbox("🌐 Összes számla megjelenítése (nem csak a sajátjaim)", value=False, key=f"{kulcs_prefix}_osszes_mutat")
     if not osszes_mutatasa and akt_uid is not None:
@@ -1544,22 +1222,15 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
         if not szamlak_data:
             st.info("Nincs még hozzád tartozó rögzített számla. Pipáld be a fenti négyzetet a rendszerben lévő összes számla megtekintéséhez.")
             return None, None, None, None, None, None, None
-
-
     fc1, fc2, fc3, fc4 = st.columns(4)
     energia_opciok = ["Összes"] + sorted(list(set(h_energia_map.values())))
     val_energia = fc1.selectbox("⚡ Energiatípus:", energia_opciok, key=f"{kulcs_prefix}_f_energia")
-
     hely_nevek = ["Összes"] + sorted(list(set(h_map.get(s["felhasznalasi_hely_id"], "Ismeretlen") for s in szamlak_data)))
     val_hely = fc2.selectbox("🏭 Felhasználási hely:", hely_nevek, key=f"{kulcs_prefix}_f_hely")
-
     szolg_nevek = ["Összes"] + sorted(list(set(s_map.get(s["szolgaltato_id"], "Ismeretlen") for s in szamlak_data)))
     val_szolg = fc3.selectbox("🏢 Szolgáltató:", szolg_nevek, key=f"{kulcs_prefix}_f_szolg")
-
     honapok = sorted(list(set(tiszta_honap(s.get("elszamolasi_honap")) for s in szamlak_data)), key=honap_kulcs)
     val_honapok = fc4.multiselect("📅 Elszámolási hónap:", honapok, default=[], placeholder="Összes hónap", key=f"{kulcs_prefix}_f_ho")
-
-
     szurt_lista = list()
     for s in szamlak_data:
         hid = s["felhasznalasi_hely_id"]
@@ -1567,7 +1238,6 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
         h_nev = h_map.get(hid, "Ismeretlen")
         s_nev = s_map.get(s["szolgaltato_id"], "Ismeretlen")
         ho_cimke = tiszta_honap(s.get("elszamolasi_honap"))
-
         if val_energia != "Összes" and e_tipus != val_energia:
             continue
         if val_hely != "Összes" and h_nev != val_hely:
@@ -1577,11 +1247,9 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
         if val_honapok and ho_cimke not in val_honapok:
             continue
         szurt_lista.append(s)
-
     if not szurt_lista:
         st.warning("A megadott szűrőfeltételekkel nincs találat.")
         return None, None, None, None, None, None, None
-
     szurt_lista.sort(
         key=lambda s: (
             (0, 0) if honap_kulcs(tiszta_honap(s.get("elszamolasi_honap"))) == (9999, 99) else honap_kulcs(tiszta_honap(s.get("elszamolasi_honap"))),
@@ -1589,22 +1257,18 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
         ),
         reverse=True
     )
-
     szamla_idk = list(s["id"] for s in szurt_lista)
     osszes_tetel = supabase.table("szamla_tetelek").select("*").in_("szamla_id", szamla_idk).execute().data or list()
-
     netto_per_szamla = dict()
     fogyasztas_per_szamla = dict()
     fogyasztas_me_per_szamla = dict()
     tartalek_m3_per_szamla = dict()
-
     for t in osszes_tetel:
         sid = t["szamla_id"]
         netto_per_szamla[sid] = netto_per_szamla.get(sid, 0.0) + float(t.get("szamitott_netto") or 0.0)
         megn = str(t.get("megnevezes_eredeti") or "").strip().lower()
         me = str(t.get("mertekegyseg") or "").strip().lower()
         menny = float(t.get("mennyiseg") or 0.0)
-
         if ("energiadíj" in megn or "energia díj" in megn or "áramdíj" in megn or "földgáz" in megn or "gázdíj" in megn) and me in ("kwh", "m3", "m³", "mj", "gj"):
             fogyasztas_per_szamla[sid] = fogyasztas_per_szamla.get(sid, 0.0) + menny
             fogyasztas_me_per_szamla[sid] = "m³" if me in ("m3", "m³") else t.get("mertekegyseg", "kWh")
@@ -1616,12 +1280,10 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
             fogyasztas_me_per_szamla[sid] = "m³"
         elif ("szennyvíz" in megn or "vízfelmelegítési" in megn) and me in ("m3", "m³"):
             tartalek_m3_per_szamla[sid] = tartalek_m3_per_szamla.get(sid, 0.0) + menny
-
     for sid, m3_menny in tartalek_m3_per_szamla.items():
         if fogyasztas_per_szamla.get(sid, 0.0) == 0.0 and m3_menny != 0:
             fogyasztas_per_szamla[sid] = m3_menny
             fogyasztas_me_per_szamla[sid] = "m³"
-
     sorok = list()
     for s in szurt_lista:
         sid = s["id"]
@@ -1632,8 +1294,7 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
         menny_szov = f"{fogy_menny:,.2f}".replace(",", " ").replace(".", ",")
         menny_str = f"{menny_szov} {fogy_me}" if fogy_menny != 0 else f"0,00 {fogy_me}"
         egysegar_str = f"{netto_ossz / fogy_menny:,.2f} Ft/{fogy_me}".replace(",", " ").replace(".", ",") if fogy_menny != 0 else None
-
-        sor_adat = {
+        sorok.append({
             "ID": sid,
             "Számlaszám": s.get("szamlaszam", ""),
             "Elszámolási hónap": tiszta_honap(s.get("elszamolasi_honap")),
@@ -1648,77 +1309,19 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
             "Szumma nettó egységár": egysegar_str,
             "Státusz": s.get("ellenorzes_statusz", ""),
             "PDF fájl": s.get("pdf_utvonal") or s.get("pdf_fajlnev") or ""
-        }
-        sorok.append(sor_adat)
-
+        })
     df = pd.DataFrame(sorok)
     return szurt_lista, df, osszes_tetel, netto_per_szamla, fogyasztas_per_szamla, h_map, s_map
-
-
-
-def _alkalmaz_oszlop_szuroket(df, szurt_lista, kulcs_prefix="rogz_col"):
-    oszlopok = [c for c in df.columns if c != "ID"]
-    if not oszlopok:
-        return df, szurt_lista
-
-    aktiv_szurok = dict()
-    with st.container(border=True):
-        st.caption("🔎 **Oszlopszűrők (intelligens keresővel – kattints bármelyik oszlopba és kezdj el gépelni):**")
-        sor1 = st.columns(6)
-        sor2 = st.columns(len(oszlopok) - 6) if len(oszlopok) > 6 else list()
-        osszes_cella = list(sor1) + list(sor2)
-
-        for idx, col in enumerate(oszlopok):
-            if col == "Bruttó összeg (Ft)":
-                egyedi_ertekek = sorted(list(set(int(v) for v in df[col].dropna())), reverse=True)
-                opcio_map = {ft_szoveg(v): v for v in egyedi_ertekek}
-                opciok = list(opcio_map.keys())
-                val = osszes_cella[idx].multiselect(col, opciok, placeholder="Keresés...", key=f"{kulcs_prefix}_{col}")
-                if val:
-                    aktiv_szurok[col] = set(opcio_map[x] for x in val)
-            else:
-                nyers_lista = [str(v) for v in df[col].tolist() if v is not None and str(v).strip() != "" and str(v) != "None"]
-                if col == "Elszámolási hónap":
-                    opciok = sorted(list(set(nyers_lista)), key=honap_kulcs, reverse=True)
-                else:
-                    opciok = sorted(list(set(nyers_lista)))
-                val = osszes_cella[idx].multiselect(col, opciok, placeholder="Keresés...", key=f"{kulcs_prefix}_{col}")
-                if val:
-                    aktiv_szurok[col] = set(val)
-
-        if aktiv_szurok:
-            if st.button("🧹 Oszlopszűrők törlése", key=f"{kulcs_prefix}_reset"):
-                for col in oszlopok:
-                    st.session_state[f"{kulcs_prefix}_{col}"] = list()
-                st.rerun()
-
-    if not aktiv_szurok:
-        return df, szurt_lista
-
-    szurt_df = df.copy()
-    for col, engedelyezett in aktiv_szurok.items():
-        if col == "Bruttó összeg (Ft)":
-            szurt_df = szurt_df[szurt_df[col].isin(engedelyezett)]
-        else:
-            szurt_df = szurt_df[szurt_df[col].astype(str).isin(engedelyezett)]
-
-    megmaradt_idk = set(int(x) for x in szurt_df["ID"].tolist())
-    uj_lista = [s for s in szurt_lista if int(s["id"]) in megmaradt_idk]
-    return szurt_df, uj_lista
-
-
 
 def mutat_rogzitett_szamlak():
     st.header("📑 Rögzített számlák")
     szurt_lista, df, osszes_tetel, netto_per_szamla, fogyasztas_per_szamla, h_map, s_map = _betolt_szurt_szamlak("rogz", mutass_energiatipus=True)
     if szurt_lista is None:
         return
-
     ossz_netto = int(df["Nettó összeg (Ft)"].sum())
     ossz_brutto = int(df["Bruttó összeg (Ft)"].sum())
     utolso_res = supabase.table("szamlak").select("id").order("id", desc=True).limit(1).execute().data or list()
     utolso_id = int(next(iter(utolso_res), {}).get("id") or -1)
-
     menny_per_me = dict()
     for m_txt in df["Mennyiség"].tolist():
         m_illeszt = re.match(r"^(-?[\d\s]+,\d+)\s*(.*)$", str(m_txt or "").strip())
@@ -1731,7 +1334,6 @@ def mutat_rogzitett_szamlak():
         f"{v:,.2f}".replace(",", " ").replace(".", ",") + f" {k}"
         for k, v in menny_per_me.items()
     )
-
     osszesen_sor = {
         "ID": -1,
         "Számlaszám": "ÖSSZESEN",
@@ -1748,17 +1350,13 @@ def mutat_rogzitett_szamlak():
         "Státusz": "",
         "PDF fájl": ""
     }
-
     aggrid_aktiv = False
-    kiv_szamla_id = None
     try:
         from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
         aggrid_aktiv = True
     except ImportError:
         aggrid_aktiv = False
-
     akcio_hely = st.container()
-
     if aggrid_aktiv:
         gb = GridOptionsBuilder.from_dataframe(df)
         gb.configure_default_column(
@@ -1781,8 +1379,6 @@ def mutat_rogzitett_szamlak():
         gb.configure_column("Nettó összeg (Ft)", type=["numericColumn"], valueFormatter=ft_formatter)
         gb.configure_column("Bruttó összeg (Ft)", type=["numericColumn"], valueFormatter=ft_formatter)
         gb.configure_selection(selection_mode="multiple", use_checkbox=True)
-
-
         frissit_osszesen_js = JsCode("""
         function(params) {
             let db = 0;
@@ -1829,7 +1425,6 @@ def mutat_rogzitett_szamlak():
             }]);
         }
         """)
-
         gb.configure_grid_options(
             pinnedBottomRowData=[osszesen_sor],
             onFilterChanged=frissit_osszesen_js,
@@ -1844,8 +1439,6 @@ def mutat_rogzitett_szamlak():
             }}
             """)
         )
-
-
         grid_valasz = AgGrid(
             df,
             gridOptions=gb.build(),
@@ -1856,44 +1449,75 @@ def mutat_rogzitett_szamlak():
             height=450,
             key="rogzitett_szamlak_aggrid"
         )
+
         sel = getattr(grid_valasz, "selected_rows", None)
         if sel is None and isinstance(grid_valasz, dict):
             sel = grid_valasz.get("selected_rows")
-
+        kiv_szamla_ids = list()
         if isinstance(sel, pd.DataFrame) and not sel.empty:
-            rekord = next(iter(sel.to_dict(orient="records")))
-            if int(rekord.get("ID") or -1) > 0:
-                kiv_szamla_id = int(rekord["ID"])
+            for rekord in sel.to_dict(orient="records"):
+                rid = int(rekord.get("ID") or -1)
+                if rid > 0:
+                    kiv_szamla_ids.append(rid)
         elif isinstance(sel, list) and len(sel) > 0:
-            rekord = next(iter(sel))
-            if isinstance(rekord, dict) and int(rekord.get("ID") or -1) > 0:
-                kiv_szamla_id = int(rekord["ID"])
+            for rekord in sel:
+                if isinstance(rekord, dict):
+                    rid = int(rekord.get("ID") or -1)
+                    if rid > 0:
+                        kiv_szamla_ids.append(rid)
     else:
         df_megjelenit = pd.concat([df, pd.DataFrame([osszesen_sor])], ignore_index=True)
-
         def _szinez_sorok(sor):
             if str(sor.get("Számlaszám")) == "ÖSSZESEN":
                 return ["font-weight: bold; background-color: #f0f2f6"] * len(sor)
             if int(sor.get("ID") or -1) == utolso_id:
                 return ["background-color: #d4edda; color: #155724; font-weight: bold"] * len(sor)
             return [""] * len(sor)
-
         esemeny = st.dataframe(
             df_megjelenit.style.apply(_szinez_sorok, axis=1),
             use_container_width=True,
             hide_index=True,
             on_select="rerun",
-            selection_mode="single-row",
+            selection_mode="multi-row",
             column_config={"ID": None, "Bruttó összeg (Ft)": st.column_config.NumberColumn("Bruttó összeg (Ft)", format="%d Ft")},
             key="rogzitett_szamlak_df"
         )
         kiv_sorok = esemeny.selection.rows if esemeny and hasattr(esemeny, "selection") else list()
-        elso_idx = next(iter(kiv_sorok), None)
-        if elso_idx is not None and elso_idx < len(df):
-            kiv_szamla_id = int(df.iloc[elso_idx]["ID"])
+        kiv_szamla_ids = [int(df.iloc[idx]["ID"]) for idx in kiv_sorok if idx < len(df)]
 
-    if kiv_szamla_id:
-        szamla_map_id = {int(s["id"]): s for s in szurt_lista}
+    szamla_map_id = {int(s["id"]): s for s in szurt_lista}
+
+    if len(kiv_szamla_ids) > 1:
+        kiv_objektumok = [szamla_map_id[sid] for sid in kiv_szamla_ids if sid in szamla_map_id]
+        kiv_ossz_brutto = sum(int(round(float(o.get("szamlan_szereplo_brutto") or 0))) for o in kiv_objektumok)
+        with akcio_hely:
+            c_multi_info, c_multi_del = st.columns((3.8, 2.0))
+            c_multi_info.markdown(f"**🧾 Kijelölve:** `{len(kiv_objektumok)} db` számla — Összesen: **{ft_szoveg(kiv_ossz_brutto)}**")
+            if c_multi_del.button(f"🗑️ Kijelölt számlák törlése ({len(kiv_objektumok)} db)", type="primary", use_container_width=True, key="multi_del_btn"):
+                st.session_state["tomeges_torles_megerosites"] = True
+            if st.session_state.get("tomeges_torles_megerosites"):
+                st.warning(f"⚠️ Biztosan véglegesen törölni szeretnéd a kijelölt **{len(kiv_objektumok)} db** számlát és minden díjtételüket?")
+                mc1, mc2, _ = st.columns((1.8, 1.2, 3.5))
+                if mc1.button(f"✅ Igen, mind a(z) {len(kiv_objektumok)} db törlése", type="primary", key="multi_del_yes"):
+                    torlendo_ids = [int(o["id"]) for o in kiv_objektumok]
+                    supabase.table("szamla_tetelek").delete().in_("szamla_id", torlendo_ids).execute()
+                    supabase.table("szamlak").delete().in_("id", torlendo_ids).execute()
+                    pdf_utak = [(o.get("pdf_utvonal") or o.get("pdf_fajlnev")) for o in kiv_objektumok if (o.get("pdf_utvonal") or o.get("pdf_fajlnev"))]
+                    if pdf_utak:
+                        try:
+                            supabase.storage.from_("szamlak-pdf").remove(pdf_utak)
+                        except Exception:
+                            pass
+                    st.session_state.pop("tomeges_torles_megerosites", None)
+                    st.success(f"✅ {len(torlendo_ids)} db számla sikeresen törölve!")
+                    st.rerun()
+                if mc2.button("❌ Mégse", key="multi_del_no"):
+                    st.session_state.pop("tomeges_torles_megerosites", None)
+                    st.rerun()
+
+    elif len(kiv_szamla_ids) == 1:
+        st.session_state.pop("tomeges_torles_megerosites", None)
+        kiv_szamla_id = next(iter(kiv_szamla_ids))
         szamla_obj = szamla_map_id.get(kiv_szamla_id)
         if szamla_obj:
             pdf_ut = szamla_obj.get("pdf_utvonal") or szamla_obj.get("pdf_fajlnev")
@@ -1905,10 +1529,8 @@ def mutat_rogzitett_szamlak():
                         mutat_pdf_ablak(pdf_ut, szamla_obj.get("szamlaszam", ""))
                 else:
                     c_pdf.caption("Nincs csatolt PDF")
-
                 if c_torol.button("🗑️ Számla törlése", use_container_width=True, key=f"del_btn_{kiv_szamla_id}"):
                     st.session_state["torles_megerosites_id"] = kiv_szamla_id
-
                 if st.session_state.get("torles_megerosites_id") == kiv_szamla_id:
                     st.warning(f"⚠️ Biztosan törölni szeretnéd a(z) **{szamla_obj.get('szamlaszam', '')}** számlát és minden díjtételét?")
                     tc1, tc2, _ = st.columns((1.3, 1.2, 4))
@@ -1926,9 +1548,6 @@ def mutat_rogzitett_szamlak():
                     if tc2.button("❌ Mégse", key=f"del_no_{kiv_szamla_id}"):
                         st.session_state.pop("torles_megerosites_id", None)
                         st.rerun()
-
-            st.divider()
-            szamla_tetelek = [t for t in osszes_tetel if int(t["szamla_id"]) == kiv_szamla_id]
             st.divider()
             szamla_tetelek = [t for t in osszes_tetel if int(t["szamla_id"]) == kiv_szamla_id]
             st.subheader(f"📋 Számla díjtételei ({szamla_obj.get('szamlaszam', '')})")
@@ -1939,7 +1558,6 @@ def mutat_rogzitett_szamlak():
                 ossz_fogy = 0.0
                 fogy_me = ""
                 tartalek_m3 = 0.0
-
                 for t in szamla_tetelek:
                     megn_t = str(t.get("megnevezes_eredeti") or "").strip()
                     megn_low = megn_t.lower()
@@ -1950,10 +1568,8 @@ def mutat_rogzitett_szamlak():
                     netto_t = float(t.get("szamitott_netto") or 0.0)
                     afa_t = float(t.get("afa_kulcs") or 0.0)
                     brutto_t = float(t.get("szamitott_brutto") or 0.0)
-
                     ossz_netto += netto_t
                     ossz_brutto += brutto_t
-
                     if "kompenzáció" not in megn_low:
                         if ("energiadíj" in megn_low or "energia díj" in megn_low or "áramdíj" in megn_low or "földgáz" in megn_low or "gázdíj" in megn_low) and me_low in ("kwh", "m3", "m³", "mj", "gj"):
                             ossz_fogy += menny_t
@@ -1966,73 +1582,44 @@ def mutat_rogzitett_szamlak():
                             fogy_me = "m3"
                         elif ("szennyvíz" in megn_low or "vízfelmelegítési" in megn_low) and me_low in ("m3", "m³"):
                             tartalek_m3 += menny_t
-
                     menny_szov = f"{menny_t:,.4f}".rstrip("0").rstrip(".").replace(",", " ").replace(".", ",") if menny_t != 0 else "0"
                     ar_szov = f"{ar_t:,.6f}".rstrip("0").rstrip(".").replace(",", " ").replace(".", ",") if ar_t != 0 else "0"
                     ar_me_str = f"{ar_szov} Ft/{me_t}" if me_t else f"{ar_szov} Ft"
                     afa_szov = f"{afa_t:.1f}".rstrip("0").rstrip(".").replace(".", ",")
-
-                    t_megj.append({
-                        "Megnevezés": megn_t,
-                        "Mennyiség": menny_szov,
-                        "Mértékegység": me_t,
-                        "Nettó egységár": ar_me_str,
-                        "Nettó összeg (Ft)": ft_szoveg(int(round(netto_t))),
-                        "ÁFA (%)": afa_szov,
-                        "Bruttó összeg (Ft)": ft_szoveg(int(round(brutto_t)))
-                    })
-
+                    t_megj.append({"Megnevezés": megn_t, "Mennyiség": menny_szov, "Mértékegység": me_t, "Nettó egységár": ar_me_str, "Nettó összeg (Ft)": ft_szoveg(int(round(netto_t))), "ÁFA (%)": afa_szov, "Bruttó összeg (Ft)": ft_szoveg(int(round(brutto_t)))})
                 if ossz_fogy == 0.0 and tartalek_m3 != 0.0:
                     ossz_fogy = tartalek_m3
                     fogy_me = "m3"
-
                 ossz_menny_str = f"{ossz_fogy:,.2f}".replace(",", " ").replace(".", ",")
                 szumma_ea = (ossz_netto / ossz_fogy) if ossz_fogy != 0.0 else 0.0
                 szumma_ea_str = f"{szumma_ea:,.2f}".replace(",", " ").replace(".", ",")
                 szumma_ea_me = f"{szumma_ea_str} Ft/{fogy_me}" if fogy_me else f"{szumma_ea_str} Ft"
-
-                t_megj.append({
-                    "Megnevezés": "ÖSSZESEN",
-                    "Mennyiség": ossz_menny_str,
-                    "Mértékegység": fogy_me,
-                    "Nettó egységár": szumma_ea_me,
-                    "Nettó összeg (Ft)": ft_szoveg(int(round(ossz_netto))),
-                    "ÁFA (%)": "",
-                    "Bruttó összeg (Ft)": ft_szoveg(int(round(ossz_brutto)))
-                })
-
+                t_megj.append({"Megnevezés": "ÖSSZESEN", "Mennyiség": ossz_menny_str, "Mértékegység": fogy_me, "Nettó egységár": szumma_ea_me, "Nettó összeg (Ft)": ft_szoveg(int(round(ossz_netto))), "ÁFA (%)": "", "Bruttó összeg (Ft)": ft_szoveg(int(round(ossz_brutto)))})
                 t_df = pd.DataFrame(t_megj)
-
                 def _stilus_rogz_tetel_ossz(sor):
                     if str(sor.get("Megnevezés") or "").strip() == "ÖSSZESEN":
                         return ["font-weight: bold; background-color: #e6f3ff; color: #0b3d91"] * len(sor)
                     return [""] * len(sor)
-
                 st.dataframe(t_df.style.apply(_stilus_rogz_tetel_ossz, axis=1), use_container_width=True, hide_index=True)
 
-            
 def mutat_kimutatasok():
     st.header("📊 Kimutatások és Riportok")
     szurt_lista, df, osszes_tetel, netto_per_szamla, energia_kwh_per_szamla, h_map, _ = _betolt_szurt_szamlak("kim", mutass_energiatipus=True)
     if szurt_lista is None:
         return
-
     mertekegysegek = set()
     for val in df["Szumma nettó egységár"].dropna():
         if "/" in str(val):
-                        mertekegysegek.add(str(val).split("/", 1)[-1].strip())
+            mertekegysegek.add(str(val).split("/", 1)[-1].strip())
     egyseg_cimke = next(iter(mertekegysegek)) if len(mertekegysegek) == 1 else "egység"
-
     ossz_netto_mind = sum(netto_per_szamla.values())
     ossz_kwh_mind = sum(energia_kwh_per_szamla.values())
     atlag_egysegar_str = f"{ossz_netto_mind / ossz_kwh_mind:,.2f} Ft/{egyseg_cimke}".replace(",", " ").replace(".", ",") if ossz_kwh_mind > 0 else "Nincs adat"
-
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Számlák száma", f"{len(df)} db")
     k2.metric("Összesített bruttó költség", ft_szoveg(df["Bruttó összeg (Ft)"].sum()))
     k3.metric("Átl. szumma nettó egységár", atlag_egysegar_str)
     k4.metric("Érintett hónapok", f"{df['Elszámolási hónap'].nunique()} hónap")
-
     y_tengely = alt.Axis(format=",.0f", labelExpr="replace(datum.label, /,/g, ' ') + ' Ft'", title="Bruttó összeg (Ft)")
     tab_ho, tab_hely, tab_egysegar, tab_tetel = st.tabs(list(("📅 Havi bontású költségek", "🏭 Telephelyek szerinti összesítés", "📈 Szumma nettó egységár", "⚡ Fogyasztás és Díjtételek")))
     with tab_ho:
@@ -2072,8 +1659,6 @@ def mutat_kimutatasok():
                 st.altair_chart(alt.Chart(szurt_t_df).mark_line(point=True).encode(x=alt.X("Elszámolási hónap:N", sort=ho_sorrend_t, axis=alt.Axis(labelAngle=0)), y=alt.Y("mean(Nettó egységár (Ft)):Q", axis=alt.Axis(title="Nettó egységár (Ft)")), color="Felhasználási hely:N").properties(height=280), use_container_width=True)
             st.dataframe(t_df, use_container_width=True, hide_index=True)
 
-
-
 def mutat_szamla_rogzites(user_id):
     fv = st.session_state["form_ver"]
     col_fej, col_gomb = st.columns((4, 1))
@@ -2081,39 +1666,30 @@ def mutat_szamla_rogzites(user_id):
     if col_gomb.button("🗑️ Új számla / Ürítés"):
         urit_urlap()
         st.rerun()
-
     if "utolso_mentes" in st.session_state:
         st.success(st.session_state.pop("utolso_mentes"))
         components.html(
             """
             <script>
                 const doc = window.parent.document;
-                const targets = [
-                    doc.querySelector('[data-testid="stMain"]'),
-                    doc.querySelector('[data-testid="stAppViewContainer"]'),
-                    doc.querySelector('section.main'),
-                    doc.documentElement,
-                    doc.body
-                ];
+                const targets = [doc.querySelector('[data-testid="stMain"]'), doc.querySelector('[data-testid="stAppViewContainer"]'), doc.querySelector('section.main'), doc.documentElement, doc.body];
                 targets.forEach(el => { if (el) el.scrollTop = 0; });
                 window.parent.scrollTo(0, 0);
             </script>
             """,
             height=0
         )
-
     helyek = get_helyek(user_id)
     if not helyek:
         st.warning("Nincs hozzád rendelt felhasználási hely a rendszerben.")
         return
-
     fajl = st.file_uploader("1. Húzd ide a számlát (PDF vagy Excel/CSV) – opcionális", type=list(("pdf", "xlsx", "csv")), key=f"fajl_{fv}")
     f_id = f"{fv}_{fajl.name}" if fajl else f"{fv}_ures"
     pdf_adat = None
     if fajl and fajl.name.lower().endswith(".pdf"):
         fajl.seek(0)
         pdf_adat = feldolgoz_pdf(fajl)
-        if not pdf_adat["szoveg"]:
+        if not pdf_adat.get("szoveg"):
             st.warning("Szkennelt PDF: a tételeket lent kézzel írd be, a PDF fájlt ugyanúgy elmenti a rendszer.")
         else:
             pod_db = len(pdf_adat.get("pod_adatok") or {})
@@ -2122,13 +1698,11 @@ def mutat_szamla_rogzites(user_id):
             else:
                 tetel_db = len(pdf_adat["tetelek_df"]) if pdf_adat.get("tetelek_df") is not None else 0
                 st.success(f"PDF számla feldolgozva! Számlaszám: **{pdf_adat['szamlaszam']}** ({tetel_db} db díjtétel kinyerve)")
-
     pod_adatok = (pdf_adat.get("pod_adatok") if pdf_adat else None) or {}
     gyujto_mod = len(pod_adatok) > 1
     kiv_pod = pdf_adat["pod"] if pdf_adat else ""
     kiv_pod_info = None
     meglevo_hely_idk = set()
-
     if pod_adatok:
         foszamla_br = pdf_adat.get("foszamla_brutto", 0) if pdf_adat else 0
         podok_osszesen = sum(p["brutto"] for p in pod_adatok.values())
@@ -2138,13 +1712,11 @@ def mutat_szamla_rogzites(user_id):
             g1.metric("Gyűjtőszámla főösszege", ft_szoveg(foszamla_br))
             g2.metric("POD-ok összesített bruttója", ft_szoveg(podok_osszesen))
             g3.metric("Gyűjtőszámla eltérés", ft_szoveg(gy_elteres))
-
         hely_pod_nev = {h["pod"]: h["nev"] for h in helyek}
         if pdf_adat and pdf_adat.get("szamlaszam"):
             meglevo = supabase.table("szamlak").select("felhasznalasi_hely_id").eq("szamlaszam", pdf_adat["szamlaszam"].strip()).execute().data or list()
             meglevo_hely_idk = set(x["felhasznalasi_hely_id"] for x in meglevo)
         hely_pod_to_id = {h["pod"]: int(h["id"]) for h in helyek}
-
         pod_cimkek = dict()
         elso_nem_rogzitett_idx = 0
         talalt_nem_rogzitett = False
@@ -2157,39 +1729,29 @@ def mutat_szamla_rogzites(user_id):
                 talalt_nem_rogzitett = True
             stat_jel = " ✅ [Már rögzítve]" if mar_kesz else ""
             pod_cimkek[f"{p_kod} — {h_nev} ({ft_szoveg(p_info['brutto'])}){stat_jel}"] = p_kod
-
         val_pod_cimke = st.selectbox("📍 Mérési pont (POD) kiválasztása a számlából:", list(pod_cimkek.keys()), index=elso_nem_rogzitett_idx, key=f"pod_sel_{f_id}")
         kiv_pod = pod_cimkek[val_pod_cimke]
         kiv_pod_info = pod_adatok[kiv_pod]
-
     form_kulcs = f"{f_id}_{kiv_pod}" if kiv_pod else f_id
-
     hely_opciok = {f"{h['nev']} ({h['pod']}) [{h['jog']}]": int(h["id"]) for h in helyek}
     alap_idx = next((i for i, lbl in enumerate(hely_opciok.keys()) if kiv_pod and kiv_pod in lbl), 0)
-
     st.subheader("2. Számla alapadatok")
     c1, c2, c3 = st.columns(3)
     v_hely = c1.selectbox("Felhasználási hely", list(hely_opciok.keys()), index=alap_idx, key=f"hely_{form_kulcs}")
     hely_id = hely_opciok[v_hely]
     szamlaszam = c1.text_input("Számlaszám", value=pdf_adat["szamlaszam"] if pdf_adat else "", key=f"szsz_{form_kulcs}")
-
     szolg_data = supabase.table("szolgaltatok").select("id, nev").order("nev").execute().data or list()
     szolg_opciok = {s["nev"]: int(s["id"]) for s in szolg_data}
     szolg_idx = next((i for i, nev in enumerate(szolg_opciok.keys()) if pdf_adat and pdf_adat.get("szolgaltato_kulcs") and pdf_adat["szolgaltato_kulcs"].lower() in nev.lower()), 0)
     v_szolg = c2.selectbox("Szolgáltató", list(szolg_opciok.keys()), index=szolg_idx, key=f"szolg_{form_kulcs}")
     szolg_id = szolg_opciok[v_szolg]
-
     br_kulcs = f"br_{form_kulcs}"
     br_forras = kiv_pod_info["brutto"] if kiv_pod_info else (pdf_adat["brutto"] if pdf_adat else 0)
     alap_br_szoveg = f"{int(br_forras):,}".replace(",", " ") if (br_forras != 0 or pdf_adat is not None) else ""
-
-
     szamlan_brutto_str = c2.text_input("Számlán szereplő BRUTTÓ összeg (Ft)", value=alap_br_szoveg, placeholder="pl. 6 648", key=br_kulcs, on_change=formaz_ezres, args=(br_kulcs,))
     br_negativ = "-" in szamlan_brutto_str
     br_szamjegyek = re.sub(r"\D", "", szamlan_brutto_str)
     szamlan_brutto = (-int(br_szamjegyek) if br_negativ else int(br_szamjegyek)) if br_szamjegyek else 0
-
-
     kelte = pdf_adat["kelte"] if pdf_adat else date.today()
     hatarido = pdf_adat["hatarido"] if pdf_adat else date.today()
     alap_tol = kiv_pod_info["tol"] if kiv_pod_info else (pdf_adat["tol"] if pdf_adat else date.today())
@@ -2201,6 +1763,7 @@ def mutat_szamla_rogzites(user_id):
         c3.error("⚠️ Az időszak kezdete nem lehet későbbi, mint a vége!")
     elszamolasi_honap = szamol_elszamolasi_honap(ig)
     c3.info(f"📅 Elszámolási hónap: **{elszamolasi_honap}**")
+
     st.subheader("3. Díjtételek ellenőrzése (kattints duplán a cellákba az íráshoz)")
     alap_df = pd.DataFrame(dict(Megnevezés=["Energiadíj", "Átviteli forgalmi díj", "Elosztói forgalmi díj", "Alapdíj"], Mennyiség=[0.0, 0.0, 0.0, 0.0], Mértékegység=["kWh", "kWh", "kWh", "hó"], Nettó_egységár=[0.0, 0.0, 0.0, 0.0], ÁFA=[27.0, 27.0, 27.0, 27.0]))
     alap_df.columns = list(("Megnevezés", "Mennyiség", "Mértékegység", "Nettó egységár", "ÁFA (%)"))
@@ -2213,10 +1776,6 @@ def mutat_szamla_rogzites(user_id):
     elif fajl and fajl.name.lower().endswith(".csv"):
         alap_df = pd.read_csv(fajl)
 
-    komp_sor = pd.DataFrame([{"Megnevezés": "Bruttó díj kompenzáció", "Mennyiség": None, "Mértékegység": "Ft", "Nettó egységár": None, "ÁFA (%)": None}])
-    alap_df = pd.concat([alap_df, komp_sor], ignore_index=True)
-
-
     fix_brutto_nevek = ("Fizetési felszólítás díja", "Késedelmi kamat/ÁHK", "Bruttó díj kompenzáció")
 
     def _frissit_tetel_osszegek(df_be):
@@ -2225,7 +1784,6 @@ def mutat_szamla_rogzites(user_id):
             nev: {"Megnevezés": nev, "Mennyiség": None, "Mértékegység": "Ft", "Nettó egységár": None, "ÁFA (%)": None, "Nettó összeg (Ft)": "", "Bruttó összeg (Ft)": "0 Ft"}
             for nev in fix_brutto_nevek
         }
-
         for _, sor in df_be.iterrows():
             nev_s = str(sor.get("Megnevezés") or "").strip()
             if nev_s == "ÖSSZESEN":
@@ -2234,10 +1792,8 @@ def mutat_szamla_rogzites(user_id):
                 fix_sorok_map[nev_s] = sor.to_dict()
             else:
                 normal_sorok.append(sor.to_dict())
-
         rendezett_lista = normal_sorok + [fix_sorok_map[nev] for nev in fix_brutto_nevek]
         df_ki = pd.DataFrame(rendezett_lista)
-
         nettos = list()
         bruttos = list()
         komp_idx = None
@@ -2245,13 +1801,11 @@ def mutat_szamla_rogzites(user_id):
         egyeb_brutto_ossz = 0
         mas_netto_ossz = Decimal("0")
         mas_brutto_ossz = Decimal("0")
-
         ossz_fogy = 0.0
         fogy_me = ""
         tartalek_m3 = 0.0
         elso_fogy = 0.0
         elso_me = ""
-
         for idx_r, sor in df_ki.iterrows():
             megn_str = str(sor.get("Megnevezés") or "").strip()
             if megn_str in fix_brutto_nevek:
@@ -2271,14 +1825,12 @@ def mutat_szamla_rogzites(user_id):
                     egyeb_brutto_ossz += sor_br_val
                 bruttos.append(ft_szoveg(sor_br_val))
                 continue
-
             m_v = sor.get("Mennyiség")
             a_v = sor.get("Nettó egységár")
             if m_v is None or a_v is None or pd.isna(m_v) or pd.isna(a_v):
                 nettos.append("0 Ft")
                 bruttos.append("0 Ft")
                 continue
-
             menny_d = Decimal(str(m_v))
             ar_d = Decimal(str(a_v))
             afa_v = sor.get("ÁFA (%)")
@@ -2289,12 +1841,11 @@ def mutat_szamla_rogzites(user_id):
             mas_brutto_ossz += b_val
             nettos.append(ft_szoveg(n_val))
             bruttos.append(ft_szoveg(b_val))
-
             megn_low = megn_str.lower()
             me_nyers = str(sor.get("Mértékegység") or "").strip()
             me_low = me_nyers.lower()
             menny_f = float(menny_d)
-            if ("energiadíj" in megn_low or "energia díj" in megn_low or "áramdíj" in megn_low or "földgáz" in megn_low or "gázdíj" in megn_low) and me_low in ("kwh", "m3", "m³", "mj", "gj"):
+            if ("energiadíj" in megn_low or "energia díj" in megn_low or "áramdíj" in megn_low or "földgáz" in megn_low or "gázdíj" in megn_low or "mennyiségi eltérés" in megn_low) and me_low in ("kwh", "m3", "m³", "mj", "gj"):
                 ossz_fogy += menny_f
                 fogy_me = "m3" if me_low in ("m3", "m³") else me_nyers
             elif "hődíj" in megn_low and me_low in ("gj", "mj"):
@@ -2305,18 +1856,15 @@ def mutat_szamla_rogzites(user_id):
                 fogy_me = "m3"
             elif ("szennyvíz" in megn_low or "vízfelmelegítési" in megn_low) and me_low in ("m3", "m³"):
                 tartalek_m3 += menny_f
-
             if elso_fogy == 0.0 and me_low in ("kwh", "m3", "m³", "gj", "mj") and menny_f != 0.0:
                 elso_fogy = menny_f
                 elso_me = "m3" if me_low in ("m3", "m³") else me_nyers
-
         if ossz_fogy == 0.0 and tartalek_m3 != 0.0:
             ossz_fogy = tartalek_m3
             fogy_me = "m3"
         if ossz_fogy == 0.0 and elso_fogy != 0.0:
             ossz_fogy = elso_fogy
             fogy_me = elso_me
-
         vegso_brutto = mas_brutto_ossz + Decimal(egyeb_brutto_ossz) + Decimal(komp_val)
         if komp_idx is not None and szamlan_brutto != 0:
             akt_elt = Decimal(szamlan_brutto) - vegso_brutto
@@ -2324,27 +1872,16 @@ def mutat_szamla_rogzites(user_id):
                 bruttos[komp_idx] = f"🔴 {ft_szoveg(komp_val)}"
             elif komp_val != 0:
                 bruttos[komp_idx] = f"🟢 {ft_szoveg(komp_val)}"
-
         szumma_egysegar = round(float(mas_netto_ossz) / ossz_fogy, 2) if ossz_fogy != 0.0 else 0
         ossz_menny_cella = round(ossz_fogy, 2) if ossz_fogy != 0.0 else 0
-
-        osszesen_sor = pd.DataFrame([{
-            "Megnevezés": "ÖSSZESEN",
-            "Mennyiség": ossz_menny_cella,
-            "Mértékegység": fogy_me,
-            "Nettó egységár": szumma_egysegar,
-            "ÁFA (%)": None
-        }])
+        osszesen_sor = pd.DataFrame([{"Megnevezés": "ÖSSZESEN", "Mennyiség": ossz_menny_cella, "Mértékegység": fogy_me, "Nettó egységár": szumma_egysegar, "ÁFA (%)": None}])
         df_ki = pd.concat([df_ki, osszesen_sor], ignore_index=True)
         nettos.append(ft_szoveg(mas_netto_ossz))
         bruttos.append(ft_szoveg(vegso_brutto))
-
         df_ki["Nettó összeg (Ft)"] = nettos
         df_ki["Bruttó összeg (Ft)"] = bruttos
         oszlop_sorrend = ["Megnevezés", "Mennyiség", "Mértékegység", "Nettó egységár", "ÁFA (%)", "Nettó összeg (Ft)", "Bruttó összeg (Ft)"]
-        df_ki = df_ki[oszlop_sorrend]
-        return df_ki
-
+        return df_ki[oszlop_sorrend]
 
     df_state_kulcs = f"tetel_tabla_{form_kulcs}"
     if df_state_kulcs not in st.session_state:
@@ -2355,6 +1892,7 @@ def mutat_szamla_rogzites(user_id):
     if st.button("➕ Új díjtétel sor", key=f"add_row_{form_kulcs}"):
         uj_sor = pd.DataFrame([{"Megnevezés": "Új díjtétel", "Mennyiség": 0.0, "Mértékegység": "kWh", "Nettó egységár": 0.0, "ÁFA (%)": 27.0}])
         st.session_state[df_state_kulcs] = _frissit_tetel_osszegek(pd.concat([st.session_state[df_state_kulcs], uj_sor], ignore_index=True))
+        st.session_state[f"ag_rev_{form_kulcs}"] = st.session_state.get(f"ag_rev_{form_kulcs}", 0) + 1
         st.rerun()
 
     akt_tabla_df = st.session_state[df_state_kulcs]
@@ -2362,7 +1900,6 @@ def mutat_szamla_rogzites(user_id):
 
     try:
         from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
-
         szerkesztheto_js = JsCode("""
         function(params) {
             if (!params.data) return false;
@@ -2381,9 +1918,7 @@ def mutat_szamla_rogzites(user_id):
             "Bruttó összeg (Ft)",
             valueFormatter=JsCode("""
             function(params) {
-                if (params.value === null || params.value === undefined || params.value === '') {
-                    return '0 Ft';
-                }
+                if (params.value === null || params.value === undefined || params.value === '') return '0 Ft';
                 let raw = String(params.value);
                 let prefix = '';
                 if (raw.indexOf('🔴') !== -1) prefix = '🔴 ';
@@ -2396,18 +1931,13 @@ def mutat_szamla_rogzites(user_id):
             }
             """)
         )
-
         gb.configure_column(
             "Mennyiség",
             valueFormatter=JsCode("""
             function(params) {
-                if (params.value === null || params.value === undefined || params.value === '') {
-                    return '';
-                }
+                if (params.value === null || params.value === undefined || params.value === '') return '';
                 let num = Number(params.value);
-                if (isNaN(num)) {
-                    return params.value;
-                }
+                if (isNaN(num)) return params.value;
                 let isOsszesen = (params.data && params.data.Megnevezés === 'ÖSSZESEN');
                 let reszek = isOsszesen ? num.toFixed(2).split('.') : String(Number(num.toFixed(4))).split('.');
                 reszek[0] = reszek[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');
@@ -2419,13 +1949,9 @@ def mutat_szamla_rogzites(user_id):
             "Nettó egységár",
             valueFormatter=JsCode("""
             function(params) {
-                if (params.value === null || params.value === undefined || params.value === '') {
-                    return '';
-                }
+                if (params.value === null || params.value === undefined || params.value === '') return '';
                 let num = Number(params.value);
-                if (isNaN(num)) {
-                    return params.value;
-                }
+                if (isNaN(num)) return params.value;
                 let isOsszesen = (params.data && params.data.Megnevezés === 'ÖSSZESEN');
                 let reszek = isOsszesen ? num.toFixed(2).split('.') : String(Number(num.toFixed(6))).split('.');
                 reszek[0] = reszek[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ');
@@ -2445,7 +1971,6 @@ def mutat_szamla_rogzites(user_id):
             }
             """)
         )
-
         tabla_magassag = min(650, len(display_df) * 29 + 46)
         ag_rev = st.session_state.get(f"ag_rev_{form_kulcs}", 0)
         grid_res = AgGrid(
@@ -2463,50 +1988,29 @@ def mutat_szamla_rogzites(user_id):
             nyers_data = grid_res.get("data")
         szerk_df = pd.DataFrame(nyers_data) if nyers_data is not None else akt_tabla_df
     except ImportError:
-        szerk_df = st.data_editor(
-            akt_tabla_df,
-            num_rows="fixed",
-            use_container_width=True,
-            disabled=list(("Nettó összeg (Ft)",)),
-            key=f"ed_{form_kulcs}"
-        )
+        szerk_df = st.data_editor(akt_tabla_df, num_rows="fixed", use_container_width=True, disabled=list(("Nettó összeg (Ft)",)), key=f"ed_{form_kulcs}")
 
     ujraszamolt_df = _frissit_tetel_osszegek(szerk_df)
-    regi_parok = list(zip(
-        akt_tabla_df["Mennyiség"].fillna(-999999),
-        akt_tabla_df["Nettó egységár"].fillna(-999999),
-        akt_tabla_df["Nettó összeg (Ft)"],
-        akt_tabla_df["Bruttó összeg (Ft)"]
-    ))
-    uj_parok = list(zip(
-        ujraszamolt_df["Mennyiség"].fillna(-999999),
-        ujraszamolt_df["Nettó egységár"].fillna(-999999),
-        ujraszamolt_df["Nettó összeg (Ft)"],
-        ujraszamolt_df["Bruttó összeg (Ft)"]
-    ))
+    regi_parok = list(zip(akt_tabla_df["Mennyiség"].fillna(-999999), akt_tabla_df["Nettó egységár"].fillna(-999999), akt_tabla_df["Nettó összeg (Ft)"], akt_tabla_df["Bruttó összeg (Ft)"]))
+    uj_parok = list(zip(ujraszamolt_df["Mennyiség"].fillna(-999999), ujraszamolt_df["Nettó egységár"].fillna(-999999), ujraszamolt_df["Nettó összeg (Ft)"], ujraszamolt_df["Bruttó összeg (Ft)"]))
     if regi_parok != uj_parok:
         st.session_state[df_state_kulcs] = ujraszamolt_df
         st.session_state[f"ag_rev_{form_kulcs}"] = st.session_state.get(f"ag_rev_{form_kulcs}", 0) + 1
         st.rerun()
 
     ossz_netto, ossz_brutto, tetelek = szamol_tetelek(ujraszamolt_df)
-
-
-
-
     brutto_dec = Decimal(szamlan_brutto)
     elteres = brutto_dec - ossz_brutto
-
     m1, m2, m3 = st.columns(3)
     m1.metric("Számított Nettó", ft_szoveg(ossz_netto))
     m2.metric("Számított Bruttó", ft_szoveg(ossz_brutto))
     m3.metric("Eltérés a számlától", ft_szoveg(elteres))
 
     egyezik = (elteres == Decimal("0")) and (len(tetelek) > 0) and (szamlan_brutto_str.strip() != "") and datum_rendben
-
-    if egyezik: st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
-    if not egyezik: st.warning("A mentés gomb akkor válik aktívvá, ha az eltérés pontosan 0 Ft (írd be a különbséget a Bruttó díj kompenzáció sorba) és a dátumok helyesek.")
-
+    if egyezik:
+        st.success("✅ A számított bruttó összeg megegyezik a számlán szereplővel!")
+    else:
+        st.warning("A mentés gomb akkor válik aktívvá, ha az eltérés pontosan 0 Ft (írd be a különbséget a Bruttó díj kompenzáció sorba) és a dátumok helyesek.")
 
     mentes_fajl = fajl if (fajl and fajl.name.lower().endswith(".pdf")) else None
     gomb = st.button("💾 PDF feltöltése és Számla mentése az adatbázisba", type="primary", disabled=not egyezik)
@@ -2524,7 +2028,6 @@ valasztott_nev = st.sidebar.selectbox("Belépett energetikus:", list(users_map.k
 user_sor = users_map[valasztott_nev]
 st.session_state["akt_user_id"] = int(user_sor["id"])
 st.sidebar.info(f"Szerepkör: **{user_sor['szerepkor']}**")
-
 
 menu = st.sidebar.radio("Menü", list(("🧾 Számla ellenőrzés és feltöltés", "📑 Rögzített számlák", "📊 Kimutatások és Riportok", "🔄 Helyettesítések", "⚙️ Törzsadatok")), on_change=urit_urlap)
 if menu == "🧾 Számla ellenőrzés és feltöltés":
