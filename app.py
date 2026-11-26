@@ -1732,9 +1732,7 @@ def mutat_szamla_rogzites(user_id):
     if fajl and fajl.name.lower().endswith(".pdf"):
         fajl.seek(0)
         pdf_adat = feldolgoz_pdf(fajl)
-        _sz = pdf_adat["szoveg"]
-        _k = re.search(r"2026\.10\.09(.{0,3}?)2026\.11\.08", _sz)
-        st.code(repr(_sz[_sz.find('ESZ Lakoss') - 30:_sz.find('ESZ Lakoss') + 260]))
+        
         if not pdf_adat.get("szoveg"):
             st.warning("Szkennelt PDF: a tételeket lent kézzel írd be, a PDF fájlt ugyanúgy elmenti a rendszer.")
         else:
