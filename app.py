@@ -1672,7 +1672,7 @@ def mutat_kimutatasok():
 def mutat_szamla_rogzites(user_id):
     fv = st.session_state["form_ver"]
     col_fej, col_gomb = st.columns((4, 1))
-    col_fej.header("Energiaszámla ellenőrzése és rögzítése")
+    col_fej.header("Energiaszámla ellenőrzése és rögzítése v2")
     if col_gomb.button("🗑️ Új számla / Ürítés"):
         urit_urlap()
         st.rerun()
