@@ -482,7 +482,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
         osszes_sor.extend(_vizszintes_sorok(oldal))
     rendezett_szoveg = "\n".join(osszes_sor)
     teljes_kereso = f"{szoveg}\n{rendezett_szoveg}"
-    m_sz = re.search(r"Számla\s*(?:száma|sorszáma)\s*:?\s*([A-Z0-9/-]{6,})", teljes_kereso, re.I)
+    m_sz = re.search(r"\bSzámla\s*(?:száma|sorszáma)\s*:?\s*([A-Z0-9/-]{6,})", teljes_kereso, re.I)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
     m_ido = re.search(r"Áramdíj\s*és\s*egyéb\s*díjak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", teljes_kereso, re.I)
@@ -491,7 +491,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
-    m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4}\.\d{2}\.\d{2})", teljes_kereso, re.I)
+    m_k = re.search(r"\bSzámla\s*kelte\s*:?\s*(\d{4}\.\d{2}\.\d{2})", teljes_kereso, re.I)
     if m_k:
         adat["kelte"] = datetime.strptime(m_k.group(1), "%Y.%m.%d").date()
     m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4}\.\d{2}\.\d{2})", teljes_kereso, re.I)
@@ -510,13 +510,13 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
             if br_val is not None and br_val != 0:
                 adat["brutto"] = int(round(br_val))
                 adat["foszamla_brutto"] = adat["brutto"]
-    if "egyetemes szolgáltatás" in szoveg.lower() or re.search(r"Ft/(?:kWh|hó|kW)", teljes_kereso):
+    if "egyetemes szolgáltatás" in szoveg.lower() or re.search(r"Ft\s*/\s*(?:kWh|hó|kW)", teljes_kereso):
         m_pod_esz = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", teljes_kereso)
         if m_pod_esz:
             adat["pod"] = m_pod_esz.group(1).strip()
         egyes_szam = r"-?\d{1,3}(?:[\s\xa0.]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?"
         esz_minta = re.compile(
-            rf"^(.+?)\s+\d{{4}}\.\d{{2}}\.\d{{2}}\s*[-–]\s*\d{{4}}\.\d{{2}}\.\d{{2}}\s+({egyes_szam})\s+(kWh|hó|kW|db)\s+({egyes_szam})\s*Ft/(?:kWh|hó|kW|db)\s+({egyes_szam})\s+(27|5|18|0|AHK)\s+({egyes_szam})\s*$"
+            rf"(.+?)\s+\d{{4}}\.\d{{2}}\.\d{{2}}\s*[-–]\s*\d{{4}}\.\d{{2}}\.\d{{2}}\s+({egyes_szam})\s+(kWh|hó|kW|db)\s+({egyes_szam})\s*Ft\s*/\s*(?:kWh|hó|kW|db)\s+({egyes_szam})\s+(27|5|18|0|AHK)\s+({egyes_szam})\s*$"
         )
         esz_tetelek = list()
         for s in osszes_sor:
@@ -525,7 +525,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
                 break
             if "összesen" in s_low or s_low.startswith("tétel megnevezése"):
                 continue
-            m_e = esz_minta.match(s.strip())
+            m_e = esz_minta.search(s.strip())
             if m_e:
                 nev = m_e.group(1).strip(" -–:|")
                 menny = _hu_szam(m_e.group(2))
@@ -567,6 +567,9 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
         if resz["brutto"] > 0 and adat["brutto"] == 0:
             adat["brutto"] = resz["brutto"]
     return adat
+
+
+
 def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
     szoveg_low = szoveg.lower()
     if "tiszamenti" in szoveg_low or "11265832" in szoveg_low or "trvzrt" in szoveg_low:
