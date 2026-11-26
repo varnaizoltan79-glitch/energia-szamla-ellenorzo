@@ -1697,6 +1697,7 @@ def mutat_szamla_rogzites(user_id):
     if fajl and fajl.name.lower().endswith(".pdf"):
         fajl.seek(0)
         pdf_adat = feldolgoz_pdf(fajl)
+        st.caption(f"DEBUG: gáz? {_gaz_szamla_e(pdf_adat['szoveg'])} | szolgáltató: {pdf_adat['szolgaltato_kulcs']} | díjtételek: {0 if pdf_adat.get('tetelek_df') is None else len(pdf_adat['tetelek_df'])}")
         if not pdf_adat.get("szoveg"):
             st.warning("Szkennelt PDF: a tételeket lent kézzel írd be, a PDF fájlt ugyanúgy elmenti a rendszer.")
         else:
