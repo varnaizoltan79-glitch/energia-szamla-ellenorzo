@@ -483,15 +483,13 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
     rendezett_szoveg = "\n".join(osszes_sor)
     teljes_kereso = f"{rendezett_szoveg}\n{szoveg}"
 
-    m_sz = re.search(r"\bSzámla\s+(?:száma|sorszáma)[ \t]*:?[ \t]*(\d{8,16})(?!-\d{8})", teljes_kereso, re.I)
+    m_sz = re.search(r"Számla\s+(?:száma|sorszáma)\s*:?\s*([0-9]{9,16})\b", teljes_kereso, re.I)
     if not m_sz:
-        m_sz = re.search(r"\bSzámla\s+(?:száma|sorszáma)\s*:?\s*(\d{10,16})\b", teljes_kereso, re.I)
+        m_sz = re.search(r"\b(8\d{11})\b", teljes_kereso)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
 
-    m_ido = re.search(r"Áramdíj\s*és\s*egyéb\s*díjak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\.?\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})\.?", teljes_kereso, re.I)
-    if not m_ido:
-        m_ido = re.search(r"(?:Elszámolási|Elszámolt|Teljesítési)\s*időszak(?:ok)?\s*:?\s*(\d{4}\.\d{2}\.\d{2})\.?\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})\.?", teljes_kereso, re.I)
+    m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\.?\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})\.?", teljes_kereso)
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
@@ -518,18 +516,19 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
                 adat["brutto"] = int(round(br_val))
                 adat["foszamla_brutto"] = adat["brutto"]
 
-    egyes_szam = r"-?\d{1,3}(?:[\s\xa0.]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?"
+    egyes_szam = r"-?\d{1,3}(?:[\s\xa0.]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
     esz_sor_minta = re.compile(
-        rf"^(.+?)\s+\d{{4}}\.\d{{2}}\.\d{{2}}\.?\s*[-–]\s*\d{{4}}\.\d{{2}}\.\d{{2}}\.?\s+({egyes_szam})\s+(kWh|hó|kW|db)\s+({egyes_szam})(?:\s*Ft(?:\s*/\s*(?:kWh|hó|kW|db))?)?\s+({egyes_szam})\s+(27|5|18|0|AHK)\b"
+        rf"^(.+?)\s+\d{{4}}\.\d{{2}}\.\d{{2}}\.?\s*[-–]\s*\d{{4}}\.\d{{2}}\.\d{{2}}\.?\s+({egyes_szam})\s*(kWh|hó|kW|db)\s+({egyes_szam})(?:\s*Ft(?:\s*/\s*(?:kWh|hó|kW|db))?)?\s+({egyes_szam})\s+(27|5|18|0|AHK)\b"
     )
     esz_tetelek = list()
     for s in osszes_sor:
-        s_low = s.lower().strip()
+        s_tiszta = re.sub(r"\s+", " ", s).strip()
+        s_low = s_tiszta.lower()
         if "áfa összesítő" in s_low or "bruttó számlaérték összesen" in s_low:
             break
         if "összesen" in s_low or s_low.startswith("tétel megnevezése"):
             continue
-        m_e = esz_sor_minta.match(s.strip())
+        m_e = esz_sor_minta.match(s_tiszta)
         if m_e:
             nev = m_e.group(1).strip(" -–:|")
             menny = _hu_szam(m_e.group(2))
