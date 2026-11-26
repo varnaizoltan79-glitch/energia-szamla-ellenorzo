@@ -658,40 +658,71 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
     for oldal in dok:
         osszes_sor.extend(_vizszintes_sorok(oldal))
     rendezett_szoveg = "\n".join(osszes_sor)
+    teljes_kereso = f"{szoveg}\n{rendezett_szoveg}"
 
-    m_sz = re.search(r"Számla\s*száma\s*:?\s*([A-Z0-9/-]{6,})", rendezett_szoveg, re.I)
+    m_sz = re.search(r"Számla\s*(?:száma|sorszáma)\s*:?\s*([A-Z0-9/-]{6,})", teljes_kereso, re.I)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
 
-    m_ido = re.search(r"Áramdíj\s*és\s*egyéb\s*díjak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
+    m_ido = re.search(r"Áramdíj\s*és\s*egyéb\s*díjak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", teljes_kereso, re.I)
     if not m_ido:
-        m_ido = re.search(r"(?:Elszámolási|Elszámolt|Teljesítési)\s*időszak(?:ok)?\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
+        m_ido = re.search(r"(?:Elszámolási|Elszámolt|Teljesítési)\s*időszak(?:ok)?\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", teljes_kereso, re.I)
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
 
-    m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
+    m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4}\.\d{2}\.\d{2})", teljes_kereso, re.I)
     if m_k:
         adat["kelte"] = datetime.strptime(m_k.group(1), "%Y.%m.%d").date()
 
-    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4}\.\d{2}\.\d{2})", rendezett_szoveg, re.I)
+    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4}\.\d{2}\.\d{2})", teljes_kereso, re.I)
     if m_h:
         adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
 
-        m_br = re.search(r"Fizetendő\s*:?\s*(-?[\d\.\s\xa0]+(?:,\d+)?)\s*Ft", rendezett_szoveg, re.I)
+    m_br = re.search(r"Fizetendő(?:\s*összeg)?\s*:?\s*(-?[\d\.\s\xa0]+(?:,\d+)?)\s*Ft", teljes_kereso, re.I)
     if m_br:
         br_val = _hu_szam(m_br.group(1))
         if br_val is not None and br_val != 0:
             adat["brutto"] = int(round(br_val))
             adat["foszamla_brutto"] = adat["brutto"]
     else:
-        m_veg = re.search(r"Számla\s*végösszege\s+(-?[\d\.\s\xa0]+)\s+(-?[\d\.\s\xa0]+)\s+(-?[\d\.\s\xa0]+)", rendezett_szoveg, re.I)
+        m_veg = re.search(r"Számla\s*végösszege\s+(-?[\d\.\s\xa0]+)\s+(-?[\d\.\s\xa0]+)\s+(-?[\d\.\s\xa0]+)", teljes_kereso, re.I)
         if m_veg:
             br_val = _hu_szam(m_veg.group(3))
             if br_val is not None and br_val != 0:
                 adat["brutto"] = int(round(br_val))
                 adat["foszamla_brutto"] = adat["brutto"]
 
+    # Egyetemes szolgáltatású (ESZ) lakossági MVM Next sablon felismerése
+    if "egyetemes szolgáltatás" in szoveg.lower() or re.search(r"Ft/(?:kWh|hó|kW)", teljes_kereso):
+        m_pod_esz = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", teljes_kereso)
+        if m_pod_esz:
+            adat["pod"] = m_pod_esz.group(1).strip()
+
+        egyes_szam = r"-?\d{1,3}(?:[\s\xa0.]\d{3})+(?:,\d+)?|-?\d+(?:,\d+)?"
+        esz_minta = re.compile(
+            rf"^(.+?)\s+\d{{4}}\.\d{{2}}\.\d{{2}}\s*[-–]\s*\d{{4}}\.\d{{2}}\.\d{{2}}\s+({egyes_szam})\s+(kWh|hó|kW|db)\s+({egyes_szam})\s*Ft/(?:kWh|hó|kW|db)\s+({egyes_szam})\s+(27|5|18|0|AHK)\s+({egyes_szam})\s*$"
+        )
+        esz_tetelek = list()
+        for s in osszes_sor:
+            s_low = s.lower().strip()
+            if "áfa összesítő" in s_low or "bruttó számlaérték összesen" in s_low:
+                break
+            if "összesen" in s_low or s_low.startswith("tétel megnevezése"):
+                continue
+            m_e = esz_minta.match(s.strip())
+            if m_e:
+                nev = m_e.group(1).strip(" -–:|")
+                menny = _hu_szam(m_e.group(2))
+                me = m_e.group(3).strip()
+                ar = _hu_szam(m_e.group(4))
+                afa_nyers = m_e.group(6).strip().upper()
+                afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
+                if menny is not None and ar is not None:
+                    esz_tetelek.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
+        if esz_tetelek:
+            adat["tetelek_df"] = pd.DataFrame(esz_tetelek)
+            return adat
 
     pod_indulo_sorok = list()
     for idx, s in enumerate(osszes_sor):
@@ -714,7 +745,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
             adat["ig"] = elso_pod["ig"]
             adat["tetelek_df"] = elso_pod["tetelek_df"]
     else:
-        resz_sorok = osszes_sor[pod_indulo_sorok[0]:] if pod_indulo_sorok else osszes_sor
+        resz_sorok = osszes_sor[pod_indulo_sorok:] if pod_indulo_sorok else osszes_sor
         resz = _feldolgoz_mvm_pod_blokk(resz_sorok, adat["tol"], adat["ig"], adat["brutto"])
         if resz["pod"]:
             adat["pod"] = resz["pod"]
