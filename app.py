@@ -83,6 +83,11 @@ def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
         st.image(kep.tobytes("png"), caption=f"{idx + 1}. oldal", use_container_width=True)
     st.download_button("📥 PDF letöltése a gépre", data=pdf_bytes, file_name=pdf_utvonal, mime="application/pdf")
 
+def _normalizal(szov):
+    szov = re.sub(r"[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]", "-", szov)
+    szov = re.sub(r"[\u00ad\u200b-\u200d\u2060\ufeff]", "", szov)
+    return szov.replace("\xa0", " ")
+
 def _hu_szam(szoveg):
     if not szoveg:
         return None
@@ -111,6 +116,9 @@ def _vizszintes_sorok(oldal):
     akt_szavak = list()
     for w in rendezett:
         x0, y0, x1, _, szo, *_ = w
+        szo = _normalizal(szo)
+
+        
         if abs(y0 - akt_y) <= 3.5:
             akt_szavak.append((x0, x1, szo))
         else:
@@ -806,7 +814,7 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
 def feldolgoz_pdf(fajl):
     pdf_bytes = fajl.getvalue() if hasattr(fajl, "getvalue") else fajl
     dok = fitz.open(stream=pdf_bytes, filetype="pdf")
-    szoveg = "\n".join(oldal.get_text("text") for oldal in dok)
+    szoveg = _normalizal("\n".join(oldal.get_text("text") for oldal in dok))
     szoveg_low = szoveg.lower()
     adat = {"szoveg": szoveg, "szamlaszam": "", "pod": "", "tol": date.today().replace(day=1), "ig": date.today(), "kelte": date.today(), "hatarido": date.today(), "brutto": 0, "szolgaltato_kulcs": "", "tetelek_df": None}
     adat["energiatipus_db"] = energiatipus_pod_alapjan(szoveg)
@@ -1723,7 +1731,10 @@ def mutat_szamla_rogzites(user_id):
     if fajl and fajl.name.lower().endswith(".pdf"):
         fajl.seek(0)
         pdf_adat = feldolgoz_pdf(fajl)
-        st.caption(f"DEBUG: gáz? {_gaz_szamla_e(pdf_adat['szoveg'])} | szolgáltató: {pdf_adat['szolgaltato_kulcs']} | díjtételek: {0 if pdf_adat.get('tetelek_df') is None else len(pdf_adat['tetelek_df'])}")
+        _sz = pdf_adat["szoveg"]
+        _k = re.search(r"2026\.10\.09(.{0,3}?)2026\.11\.08", _sz)
+        st.caption(f"DEBUG kötőjel: {[hex(ord(c)) for c in _k.group(1)] if _k else 'NINCS dátumtartomány a szövegben'} | tételek: {0 if pdf_adat.get('tetelek_df') is None else len(pdf_adat['tetelek_df'])}")
+        st.code(repr(_sz[_sz.find('ESZ Lakoss') - 30:_sz.find('ESZ Lakoss') + 260]))
         if not pdf_adat.get("szoveg"):
             st.warning("Szkennelt PDF: a tételeket lent kézzel írd be, a PDF fájlt ugyanúgy elmenti a rendszer.")
         else:
