@@ -483,9 +483,9 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
     rendezett_szoveg = "\n".join(osszes_sor)
     szoveg_tiszta = re.sub(r"\b\d{8}\s*-\s*\d{8}(?:\s*-\s*\d{8})?\b", "", f"{rendezett_szoveg}\n{szoveg}")
 
-    m_sz = re.search(r"(?:Számla\s+sorszáma|Számla\s+száma)\s*:?\s*(\d{9,16})\b", szoveg_tiszta, re.I)
+    m_sz = re.search(r"Számla\s+sorszáma\s*:?\s*(\d{9,16})\b", szoveg_tiszta, re.I)
     if not m_sz:
-        m_sz = re.search(r"\b(8\d{11})\b", szoveg_tiszta)
+        m_sz = re.search(r"Számla\s+száma\s*:?\s*(\d{9,16})\b", szoveg_tiszta, re.I)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
 
@@ -512,27 +512,22 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
             adat["foszamla_brutto"] = adat["brutto"]
 
     egyes_szam = r"-?\d{1,3}(?:[\s\xa0.]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
-    esz_sor_minta = re.compile(
-        rf"^(.+?)\s+\d{{4}}\.\d{{2}}\.\d{{2}}\s*[-–]\s*\d{{4}}\.\d{{2}}\.\d{{2}}\s+({egyes_szam})\s*(kWh|hó|kW|db)\s+({egyes_szam})\s*Ft/(?:kWh|hó|kW|db)\s+({egyes_szam})\s+(27|5|18|0|AHK)\s+({egyes_szam})\s*$"
+    esz_minta = re.compile(
+        rf"([^\n]+?)\s+\d{{4}}\.\d{{2}}\.\d{{2}}\s*[-–]\s*\d{{4}}\.\d{{2}}\.\d{{2}}\s+({egyes_szam})\s+(kWh|hó|kW|db)\s+({egyes_szam})\s*Ft\s*/\s*(?:kWh|hó|kW|db)\s+({egyes_szam})\s+(27|5|18|0|AHK)\s+({egyes_szam})"
     )
     esz_tetelek = list()
-    for s in osszes_sor:
-        s_tiszta = re.sub(r"\s+", " ", s).strip()
-        s_low = s_tiszta.lower()
-        if "áfa összesítő" in s_low or "bruttó számlaérték összesen" in s_low:
-            break
-        if "összesen" in s_low or s_low.startswith("tétel megnevezése"):
+    resz_szoveg = next(iter(szoveg.split("ÁFA összesítő")))
+    for m_e in esz_minta.finditer(resz_szoveg):
+        nev = re.sub(r"\s+", " ", m_e.group(1)).strip(" -–:|")
+        if "összesen" in nev.lower() or "tétel megnevezése" in nev.lower():
             continue
-        m_e = esz_sor_minta.match(s_tiszta)
-        if m_e:
-            nev = m_e.group(1).strip(" -–:|")
-            menny = _hu_szam(m_e.group(2))
-            me = m_e.group(3).strip()
-            ar = _hu_szam(m_e.group(4))
-            afa_nyers = m_e.group(6).strip().upper()
-            afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
-            if menny is not None and ar is not None:
-                esz_tetelek.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
+        menny = _hu_szam(m_e.group(2))
+        me = m_e.group(3).strip()
+        ar = _hu_szam(m_e.group(4))
+        afa_nyers = m_e.group(6).strip().upper()
+        afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
+        if menny is not None and ar is not None:
+            esz_tetelek.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
     if esz_tetelek:
         m_pod_esz = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", szoveg_tiszta)
