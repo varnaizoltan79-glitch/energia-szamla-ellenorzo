@@ -1044,46 +1044,36 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
 
 
 
-def feldolgoz_pdf(fajl):
-    pdf_bytes = fajl.read()
+def feldolgoz_szamla_pdf(pdf_bytes):
     dok = fitz.open(stream=pdf_bytes, filetype="pdf")
-    szoveg = "\n".join(list(oldal.get_text("text") or "" for oldal in dok))
-    adat = {"szoveg": szoveg.strip(), "szamlaszam": "", "kelte": date.today(), "hatarido": date.today(), "tol": date.today(), "ig": date.today(), "brutto": 0, "pod": "", "szolgaltato_kulcs": "", "tetelek_df": None, "pod_adatok": {}}
-
-    mk = re.search(r"Számla\s*kelte[:\s]+(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
-    if mk: adat["kelte"] = datetime.strptime(mk.group(1), "%Y.%m.%d").date()
-    mh = re.search(r"Fizetési\s*határidő[:\s]+(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
-    if mh: adat["hatarido"] = datetime.strptime(mh.group(1), "%Y.%m.%d").date()
-    mp = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", szoveg)
-    if mp: adat["pod"] = mp.group(1).strip()
-
+    szoveg = "\n".join(oldal.get_text("text") for oldal in dok)
     szoveg_low = szoveg.lower()
-    if any(az in szoveg_low for az in SZOLGALTATO_SABLONOK["ALTEO"]["azonositok"]):
-        return _feldolgoz_alteo_pdf(dok, szoveg, adat)
-    if any(az in szoveg_low for az in SZOLGALTATO_SABLONOK["MVM"]["azonositok"]):
+
+    adat = {
+        "szamlaszam": "",
+        "pod": "",
+        "tol": date.today().replace(day=1),
+        "ig": date.today(),
+        "kelte": date.today(),
+        "hatarido": date.today(),
+        "brutto": 0,
+        "szolgaltato_kulcs": "",
+        "tetelek_df": None
+    }
+
+    if "mvm next" in szoveg_low or "mvmnext" in szoveg_low or "26713111" in szoveg_low or "10700024-71534116" in szoveg_low:
         return _feldolgoz_mvm_pdf(dok, szoveg, adat)
-    if any(az in szoveg_low for az in SZOLGALTATO_SABLONOK["TAVHO"]["azonositok"]):
+    elif "alteo" in szoveg_low or "13245053" in szoveg_low:
+        return _feldolgoz_alteo_pdf(dok, szoveg, adat)
+    elif any(k in szoveg_low for k in ("távhő", "hőszolgáltató", "nyírtávhő", "dhrt.hu", "23506088", "11241256")):
         return _feldolgoz_tavho_pdf(dok, szoveg, adat)
-    if any(az in szoveg_low for az in SZOLGALTATO_SABLONOK["VIZMU"]["azonositok"]):
+    elif any(k in szoveg_low for k in ("vízmű", "víziközmű", "tiszamenti", "nyírségvíz", "drv zrt", "érv zrt", "érv. zrt", "11265832", "11069186", "11492809", "11226002")):
         return _feldolgoz_vizmu_pdf(dok, szoveg, adat)
+    elif any(k in szoveg_low for k in ("e.on", "eon", "opus titász", "titász", "mvm démász", "elmű", "émász")):
+        if "_feldolgoz_eon_pdf" in globals():
+            return _feldolgoz_eon_pdf(dok, szoveg, adat)
+    return _feldolgoz_mvm_pdf(dok, szoveg, adat)
 
-    m = re.search(r"(?:Számla\s*sorszáma|Számlaszám|Bizonylat\s*sorszáma)[:\s]+([A-Za-z0-9/-]{5,})", szoveg, re.I)
-    if m: adat["szamlaszam"] = m.group(1).strip()
-    alap_nev = next(iter(fajl.name.rsplit(".", 1)))
-    mf = re.search(r"(\d{6,})", alap_nev)
-    if not adat["szamlaszam"] and mf: adat["szamlaszam"] = mf.group(1)
-    if not adat["szamlaszam"] and len(alap_nev) >= 5: adat["szamlaszam"] = alap_nev
-
-    mi = re.search(r"(?:Elszámolt|Teljesítési|Elszámolási)\s*időszak[:\s]+(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", szoveg, re.I)
-    if mi:
-        adat["tol"] = datetime.strptime(mi.group(1), "%Y.%m.%d").date()
-        adat["ig"] = datetime.strptime(mi.group(2), "%Y.%m.%d").date()
-    mb = re.search(r"(?:Fizetendő\s*összeg|Fizetendő\s*összesen|Számla\s*végösszege)[:\s]+([\d\.\s\xa0]+(?:,\d+)?)\s*Ft", szoveg, re.I)
-    if mb:
-        br_val = _hu_szam(mb.group(1))
-        if br_val:
-            adat["brutto"] = int(round(br_val))
-    return adat
 
 
 def get_helyek(uid):
