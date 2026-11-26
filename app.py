@@ -86,7 +86,7 @@ def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
 def _normalizal(szov):
     szov = re.sub(r"[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]", "-", szov)
     szov = re.sub(r"[\u00ad\u200b-\u200d\u2060\ufeff]", "", szov)
-    szov = re.sub(r"(\d{4}\.\d{2}\.\d{2})(?=\d{4}\.\d{2}\.\d{2})", r"\1-", szov)
+    szov = re.sub(r"(\d{4}\.\d{2}\.\d{2}\.?)(?=\d{4}\.\d{2}\.\d{2})", r"\1-", szov)
     return szov.replace("\xa0", " ")
 
 def _hu_szam(szoveg):
@@ -377,8 +377,48 @@ def _feldolgoz_mvm_gaz_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
         pod_brutto = int(szam_br)
     return {"pod": pod, "tol": pod_tol, "ig": pod_ig, "brutto": pod_brutto, "tetelek_df": tetelek_df}
 
+def _feldolgoz_mvm_gaz_egyszeru(szoveg, adat):
+    m_sz = re.search(r"Számla\s+sorszáma\s*:?\s*(\d{9,16})", szoveg)
+    if m_sz:
+        adat["szamlaszam"] = m_sz.group(1)
+    m_pod = re.search(r"(39N[A-Z0-9]{10,})", szoveg)
+    if m_pod:
+        adat["pod"] = m_pod.group(1)
+    m_ido = re.search(r"Elszámolási\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\.?\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", szoveg)
+    if m_ido:
+        adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
+        adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
+    m_k = re.search(r"Számla\s*kelte\s*:?\s*(\d{4}\.\d{2}\.\d{2})", szoveg)
+    if m_k:
+        adat["kelte"] = datetime.strptime(m_k.group(1), "%Y.%m.%d").date()
+    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4}\.\d{2}\.\d{2})", szoveg)
+    if m_h:
+        adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
+    m_br = re.search(r"Fizetendő\s*összeg\s*:?\s*(-?[\d\s\xa0]+)\s*Ft", szoveg)
+    if m_br:
+        br_val = _hu_szam(m_br.group(1))
+        if br_val is not None:
+            adat["brutto"] = int(round(br_val))
+            adat["foszamla_brutto"] = adat["brutto"]
+    e = r"-?\d{1,3}(?:[\s\xa0.]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
+    minta = re.compile(rf"([^\n]+?)\s+\d{{4}}\.\d{{2}}\.\d{{2}}\.?\s*-\s*\d{{4}}\.\d{{2}}\.\d{{2}}\.?\s+({e})\s+(MJ|kWh|m3|m³|hó|GJ)\s+({e})\s*Ft\s*/\s*(?:MJ|kWh|m3|m³|hó|GJ)\s+({e})\s+(27|5|18|0|AHK)\b")
+    talalatok = list()
+    for m in minta.finditer(szoveg.split("ÁFA összesítő")[0]):
+        nev = re.sub(r"\s+", " ", m.group(1)).strip(" -–:|")
+        menny = _hu_szam(m.group(2))
+        ar = _hu_szam(m.group(4))
+        afa = 0.0 if m.group(6) == "AHK" else float(m.group(6))
+        if menny is not None and ar is not None:
+            talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": m.group(3).replace("m³", "m3"), "Nettó egységár": ar, "ÁFA (%)": afa})
+    if talalatok:
+        adat["tetelek_df"] = pd.DataFrame(talalatok)
+        return True
+    return False
+
 def _feldolgoz_mvm_gaz_pdf(dok, szoveg, adat):
     adat["szolgaltato_kulcs"] = "MVM"
+    if _feldolgoz_mvm_gaz_egyszeru(szoveg, adat):
+        return adat
     osszes_sor = list()
     for oldal in dok:
         osszes_sor.extend(_vizszintes_sorok(oldal))
