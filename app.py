@@ -384,7 +384,7 @@ def _feldolgoz_mvm_gaz_egyszeru(szoveg, adat):
     m_pod = re.search(r"(39N[A-Z0-9]{10,})", szoveg)
     if m_pod:
         adat["pod"] = m_pod.group(1)
-    m_ido = re.search(r"Elszámolási\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\.?\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", szoveg)
+    m_ido = re.search(r"Elszámolási\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\.?\s*[-–]?\s*(\d{4}\.\d{2}\.\d{2})", szoveg)
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
@@ -401,20 +401,32 @@ def _feldolgoz_mvm_gaz_egyszeru(szoveg, adat):
             adat["brutto"] = int(round(br_val))
             adat["foszamla_brutto"] = adat["brutto"]
     e = r"-?\d{1,3}(?:[\s\xa0.]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
-    minta = re.compile(rf"([^\n]+?)\s+\d{{4}}\.\d{{2}}\.\d{{2}}\.?\s*-\s*\d{{4}}\.\d{{2}}\.\d{{2}}\.?\s+({e})\s+(MJ|kWh|m3|m³|hó|GJ)\s+({e})\s*Ft\s*/\s*(?:MJ|kWh|m3|m³|hó|GJ)\s+({e})\s+(27|5|18|0|AHK)\b")
+    afa_re = r"(27|5|18|0|AHK)"
+    egys = r"(?:MJ|kWh|m3|m³|hó|GJ)"
+    minta = re.compile(rf"([^\n]+?)\s+\d{{4}}\.\d{{2}}\.\d{{2}}\.?\s*-?\s*\d{{4}}\.\d{{2}}\.\d{{2}}\.?\s+(?:{afa_re}\s+)?({e})\s+({egys})\s+({e})\s*Ft\s*/\s*{egys}\s+({e})(?:\s+{afa_re}\b)?")
+    reszletezo = szoveg.split("ÁFA összesítő")[0]
     talalatok = list()
-    for m in minta.finditer(szoveg.split("ÁFA összesítő")[0]):
+    for m in minta.finditer(reszletezo):
         nev = re.sub(r"\s+", " ", m.group(1)).strip(" -–:|")
-        menny = _hu_szam(m.group(2))
-        ar = _hu_szam(m.group(4))
-        afa = 0.0 if m.group(6) == "AHK" else float(m.group(6))
+        if nev and nev[0].islower():
+            elozo = reszletezo[:m.start(1)].rstrip("\n").split("\n")[-1]
+            nev = f"{elozo} {nev}".strip(" -–:|")
+        afa_nyers = m.group(2) or m.group(7) or "27"
+        afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
+        menny = _hu_szam(m.group(3))
+        ar = _hu_szam(m.group(5))
         if menny is not None and ar is not None:
-            talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": m.group(3).replace("m³", "m3"), "Nettó egységár": ar, "ÁFA (%)": afa})
+            talalatok.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": m.group(4).replace("m³", "m3"), "Nettó egységár": ar, "ÁFA (%)": afa})
     if talalatok:
-        adat["tetelek_df"] = pd.DataFrame(talalatok)
+        df = pd.DataFrame(talalatok)
+        m_ker = re.search(r"Kerekítés\s*(-?\d+)\b", reszletezo)
+        komp = int(m_ker.group(1)) if m_ker else 0
+        if komp != 0:
+            komp_sor = pd.DataFrame([{"Megnevezés": "Bruttó díj kompenzáció", "Mennyiség": 1.0, "Mértékegység": "Ft", "Nettó egységár": 0.0, "ÁFA (%)": 0.0, "Bruttó összeg (Ft)": ft_szoveg(komp)}])
+            df = pd.concat([df, komp_sor], ignore_index=True)
+        adat["tetelek_df"] = df
         return True
     return False
-
 def _feldolgoz_mvm_gaz_pdf(dok, szoveg, adat):
     adat["szolgaltato_kulcs"] = "MVM"
     if _feldolgoz_mvm_gaz_egyszeru(szoveg, adat):
