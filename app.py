@@ -481,28 +481,30 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
     for oldal in dok:
         osszes_sor.extend(_vizszintes_sorok(oldal))
     rendezett_szoveg = "\n".join(osszes_sor)
-    szoveg_bankszamla_nelkul = re.sub(r"\b\d{8}\s*-\s*\d{8}(?:\s*-\s*\d{8})?\b", "", f"{rendezett_szoveg}\n{szoveg}")
+    szoveg_tiszta = re.sub(r"\b\d{8}\s*-\s*\d{8}(?:\s*-\s*\d{8})?\b", "", f"{rendezett_szoveg}\n{szoveg}")
 
-    m_sz = re.search(r"Számla\s+(?:száma|sorszáma)\s*:?\s*([0-9]{9,16})\b", szoveg_bankszamla_nelkul, re.I)
+    m_sz = re.search(r"(?:Számla\s+sorszáma|Számla\s+száma)\s*:?\s*(\d{9,16})\b", szoveg_tiszta, re.I)
     if not m_sz:
-        m_sz = re.search(r"\b(\d{12})\b", szoveg_bankszamla_nelkul)
+        m_sz = re.search(r"\b(8\d{11})\b", szoveg_tiszta)
     if m_sz:
         adat["szamlaszam"] = m_sz.group(1).strip()
 
-    m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\.?\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})\.?", szoveg_bankszamla_nelkul)
+    m_ido = re.search(r"Elszámolt\s*időszak\s*:?\s*(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", szoveg_tiszta, re.I)
+    if not m_ido:
+        m_ido = re.search(r"(\d{4}\.\d{2}\.\d{2})\s*[-–]\s*(\d{4}\.\d{2}\.\d{2})", szoveg_tiszta)
     if m_ido:
         adat["tol"] = datetime.strptime(m_ido.group(1), "%Y.%m.%d").date()
         adat["ig"] = datetime.strptime(m_ido.group(2), "%Y.%m.%d").date()
 
-    m_k = re.search(r"Számla\s+kelte\s*:?\s*(\d{4}\.\d{2}\.\d{2})", szoveg_bankszamla_nelkul, re.I)
+    m_k = re.search(r"Számla\s+kelte\s*:?\s*(\d{4}\.\d{2}\.\d{2})", szoveg_tiszta, re.I)
     if m_k:
         adat["kelte"] = datetime.strptime(m_k.group(1), "%Y.%m.%d").date()
 
-    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4}\.\d{2}\.\d{2})", szoveg_bankszamla_nelkul, re.I)
+    m_h = re.search(r"Fizetési\s*határidő\s*:?\s*(\d{4}\.\d{2}\.\d{2})", szoveg_tiszta, re.I)
     if m_h:
         adat["hatarido"] = datetime.strptime(m_h.group(1), "%Y.%m.%d").date()
 
-    m_br = re.search(r"Fizetendő(?:\s*összeg)?\s*:?\s*(-?[\d\.\s\xa0]+(?:,\d+)?)\s*Ft", szoveg_bankszamla_nelkul, re.I)
+    m_br = re.search(r"Fizetendő\s*összeg\s*:?\s*(-?[\d\.\s\xa0]+(?:,\d+)?)\s*Ft", szoveg_tiszta, re.I)
     if m_br:
         br_val = _hu_szam(m_br.group(1))
         if br_val is not None and br_val != 0:
@@ -511,35 +513,29 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
 
     egyes_szam = r"-?\d{1,3}(?:[\s\xa0.]\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?"
     esz_sor_minta = re.compile(
-        rf"^(.*?)\s*\d{{4}}\.\d{{2}}\.\d{{2}}\.?\s*[-–]\s*\d{{4}}\.\d{{2}}\.\d{{2}}\.?\s+({egyes_szam})\s*(kWh|hó|kW|db)\s+({egyes_szam})(?:\s*Ft(?:\s*/\s*(?:kWh|hó|kW|db))?)?\s+({egyes_szam})\s+(27|5|18|0|AHK)\b"
+        rf"^(.+?)\s+\d{{4}}\.\d{{2}}\.\d{{2}}\s*[-–]\s*\d{{4}}\.\d{{2}}\.\d{{2}}\s+({egyes_szam})\s*(kWh|hó|kW|db)\s+({egyes_szam})\s*Ft/(?:kWh|hó|kW|db)\s+({egyes_szam})\s+(27|5|18|0|AHK)\s+({egyes_szam})\s*$"
     )
     esz_tetelek = list()
-    elozo_sor = ""
     for s in osszes_sor:
         s_tiszta = re.sub(r"\s+", " ", s).strip()
         s_low = s_tiszta.lower()
         if "áfa összesítő" in s_low or "bruttó számlaérték összesen" in s_low:
             break
         if "összesen" in s_low or s_low.startswith("tétel megnevezése"):
-            elozo_sor = ""
             continue
         m_e = esz_sor_minta.match(s_tiszta)
         if m_e:
-            nev = m_e.group(1).strip(" -–:|") or elozo_sor
-            elozo_sor = ""
+            nev = m_e.group(1).strip(" -–:|")
             menny = _hu_szam(m_e.group(2))
             me = m_e.group(3).strip()
             ar = _hu_szam(m_e.group(4))
             afa_nyers = m_e.group(6).strip().upper()
             afa = 0.0 if afa_nyers == "AHK" else float(afa_nyers)
             if menny is not None and ar is not None:
-                esz_tetelek.append({"Megnevezés": nev or "Villamos energia díjtétel", "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
-        else:
-            if not re.search(r"\d{4}\.\d{2}", s_tiszta) and len(s_tiszta) > 4:
-                elozo_sor = s_tiszta.strip(" -–:|")
+                esz_tetelek.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
     if esz_tetelek:
-        m_pod_esz = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", szoveg_bankszamla_nelkul)
+        m_pod_esz = re.search(r"(HU\d{6}[-A-Z0-9]{10,})", szoveg_tiszta)
         if m_pod_esz:
             adat["pod"] = m_pod_esz.group(1).strip()
         adat["tetelek_df"] = pd.DataFrame(esz_tetelek)
@@ -1672,7 +1668,7 @@ def mutat_kimutatasok():
 def mutat_szamla_rogzites(user_id):
     fv = st.session_state["form_ver"]
     col_fej, col_gomb = st.columns((4, 1))
-    col_fej.header("Energiaszámla ellenőrzése és rögzítése v2")
+    col_fej.header("Energiaszámla ellenőrzése és rögzítése")
     if col_gomb.button("🗑️ Új számla / Ürítés"):
         urit_urlap()
         st.rerun()
