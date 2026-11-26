@@ -137,13 +137,29 @@ def _vizszintes_sorok(oldal):
         sorok.append("".join(sor_reszek))
     return sorok
 
-def _gaz_szamla_e(szoveg):
-    if re.search(r"\b39N[A-Z0-9]{10,}\b", szoveg):
-        return True
-    if re.search(r"\bHU\d{6}[-A-Z0-9]{10,}", szoveg):
-        return False
-    return "földgáz" in szoveg.lower() and "villamos energia" not in szoveg.lower()
+@st.cache_data(ttl=60)
+def _helyek_pod_tipus():
+    sorok = supabase.table("felhasznalasi_helyek").select("pod_eic_azonosito, energiatipus").execute().data or list()
+    return list((str(s["pod_eic_azonosito"]).strip(), s.get("energiatipus") or "Villamos energia") for s in sorok if s.get("pod_eic_azonosito"))
 
+def energiatipus_pod_alapjan(szoveg):
+    tiszta = re.sub(r"\s+", "", szoveg).upper()
+    talalatok = list()
+    for pod, tipus in _helyek_pod_tipus():
+        pod_tiszta = re.sub(r"\s+", "", pod).upper()
+        if len(pod_tiszta) >= 5 and pod_tiszta in tiszta:
+            talalatok.append(tipus)
+    return max(set(talalatok), key=talalatok.count) if talalatok else None
+
+def _gaz_szamla_e(szoveg, adat=None):
+    tipus = (adat or dict()).get("energiatipus_db")
+    if tipus:
+        return tipus == "Földgáz"
+    if re.search(r"HU\d{6}-\d{2}-[A-Z0-9]{10,}", szoveg):
+        return False
+    if re.search(r"villamos\s*energia", szoveg, re.I) and "kWh" in szoveg:
+        return False
+    return bool(re.search(r"\b39N[A-Z0-9]{10,}\b", szoveg)) or "földgáz" in szoveg.lower()
 def _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat):
     adat["szolgaltato_kulcs"] = "ALTEO"
     m_pod = re.search(r"(?:POD\s*:?\s*)?(39N[A-Z0-9]{10,})", szoveg, re.I)
@@ -239,7 +255,7 @@ def _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat):
     return adat
 
 def _feldolgoz_alteo_pdf(dok, szoveg, adat):
-    if _gaz_szamla_e(szoveg):
+    if _gaz_szamla_e(szoveg, adat):
         return _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat)
     adat["szolgaltato_kulcs"] = "ALTEO"
     osszes_sor = list()
@@ -481,7 +497,7 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
     return {"pod": pod, "tol": pod_tol, "ig": pod_ig, "brutto": pod_brutto, "tetelek_df": tetelek_df}
 
 def _feldolgoz_mvm_pdf(dok, szoveg, adat):
-    if _gaz_szamla_e(szoveg):
+    if _gaz_szamla_e(szoveg, adat):
         return _feldolgoz_mvm_gaz_pdf(dok, szoveg, adat)
     adat["szolgaltato_kulcs"] = "MVM"
     osszes_sor = list()
@@ -793,6 +809,16 @@ def feldolgoz_pdf(fajl):
     szoveg = "\n".join(oldal.get_text("text") for oldal in dok)
     szoveg_low = szoveg.lower()
     adat = {"szoveg": szoveg, "szamlaszam": "", "pod": "", "tol": date.today().replace(day=1), "ig": date.today(), "kelte": date.today(), "hatarido": date.today(), "brutto": 0, "szolgaltato_kulcs": "", "tetelek_df": None}
+    adat["energiatipus_db"] = energiatipus_pod_alapjan(szoveg)
+    db_tipus = adat["energiatipus_db"]
+    if db_tipus == "Távhő":
+        return _feldolgoz_tavho_pdf(dok, szoveg, adat)
+    if db_tipus == "Víziközmű":
+        return _feldolgoz_vizmu_pdf(dok, szoveg, adat)
+    if db_tipus in ("Villamos energia", "Földgáz"):
+        if "alteo" in szoveg_low or "13245053" in szoveg_low:
+            return _feldolgoz_alteo_pdf(dok, szoveg, adat)
+        return _feldolgoz_mvm_pdf(dok, szoveg, adat)
     if "mvm next" in szoveg_low or "mvmnext" in szoveg_low or "26713111" in szoveg_low or "10700024-71534116" in szoveg_low:
         return _feldolgoz_mvm_pdf(dok, szoveg, adat)
     elif "alteo" in szoveg_low or "13245053" in szoveg_low:
