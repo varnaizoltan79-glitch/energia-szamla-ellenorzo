@@ -1747,11 +1747,18 @@ def mutat_rogzitett_szamlak():
             filterParams={"buttons": ["reset", "apply"], "closeOnApply": True}
         )
         gb.configure_column("ID", hide=True)
-        gb.configure_column("Számlaszám", checkboxSelection=True, headerCheckboxSelection=False, minWidth=160)
+        gb.configure_column(
+            "Számlaszám",
+            checkboxSelection=True,
+            headerCheckboxSelection=True,
+            headerCheckboxSelectionFilteredOnly=True,
+            minWidth=170
+        )
         ft_formatter = JsCode("function(params) { return params.value != null ? Number(params.value).toLocaleString('hu-HU') + ' Ft' : ''; }")
         gb.configure_column("Nettó összeg (Ft)", type=["numericColumn"], valueFormatter=ft_formatter)
         gb.configure_column("Bruttó összeg (Ft)", type=["numericColumn"], valueFormatter=ft_formatter)
-        gb.configure_selection(selection_mode="single", use_checkbox=True)
+        gb.configure_selection(selection_mode="multiple", use_checkbox=True)
+
 
         frissit_osszesen_js = JsCode("""
         function(params) {
