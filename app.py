@@ -1364,7 +1364,7 @@ def _betolt_szurt_szamlak(kulcs_prefix, mutass_energiatipus=False):
         megn = str(t.get("megnevezes_eredeti") or "").strip().lower()
         me = str(t.get("mertekegyseg") or "").strip().lower()
         menny = float(t.get("mennyiseg") or 0.0)
-        if ("energiadíj" in megn or "energia díj" in megn or "áramdíj" in megn or "földgáz" in megn or "gázdíj" in megn or "árszabás ára" in megn) and me in ("kwh", "m3", "m³", "mj", "gj"):
+        if ("energiadíj" in megn or "energia díj" in megn or "áramdíj" in megn or "földgáz" in megn or "gázdíj" in megn or "árszabás ára" in megn or "versenypiaci" in megn) and me in ("kwh", "m3", "m³", "mj", "gj"):
             fogyasztas_per_szamla[sid] = fogyasztas_per_szamla.get(sid, 0.0) + menny
             fogyasztas_me_per_szamla[sid] = "m³" if me in ("m3", "m³") else t.get("mertekegyseg", "kWh")
         elif "hődíj" in megn and me in ("gj", "mj"):
@@ -1666,7 +1666,7 @@ def mutat_rogzitett_szamlak():
                     ossz_netto += netto_t
                     ossz_brutto += brutto_t
                     if "kompenzáció" not in megn_low:
-                        if ("energiadíj" in megn_low or "energia díj" in megn_low or "áramdíj" in megn_low or "földgáz" in megn_low or "gázdíj" in megn_low or "árszabás ára" in megn_low) and me_low in ("kwh", "m3", "m³", "mj", "gj"):
+                        if ("energiadíj" in megn_low or "energia díj" in megn_low or "áramdíj" in megn_low or "földgáz" in megn_low or "gázdíj" in megn_low or "árszabás ára" in megn_low or "versenypiaci" in megn_low) and me_low in ("kwh", "m3", "m³", "mj", "gj"):
                             ossz_fogy += menny_t
                             fogy_me = "m3" if me_low in ("m3", "m³") else me_t
                         elif "hődíj" in megn_low and me_low in ("gj", "mj"):
@@ -1941,7 +1941,7 @@ def mutat_szamla_rogzites(user_id):
             me_nyers = str(sor.get("Mértékegység") or "").strip()
             me_low = me_nyers.lower()
             menny_f = float(menny_d)
-            if ("energiadíj" in megn_low or "energia díj" in megn_low or "áramdíj" in megn_low or "földgáz" in megn_low or "gázdíj" in megn_low or "mennyiségi eltérés" in megn_low or "árszabás ára" in megn_low) and me_low in ("kwh", "m3", "m³", "mj", "gj"):
+            if ("energiadíj" in megn_low or "energia díj" in megn_low or "áramdíj" in megn_low or "földgáz" in megn_low or "gázdíj" in megn_low or "mennyiségi eltérés" in megn_low or "árszabás ára" in megn_low or "versenypiaci" in megn_low) and me_low in ("kwh", "m3", "m³", "mj", "gj"):
                 ossz_fogy += menny_f
                 fogy_me = "m3" if me_low in ("m3", "m³") else me_nyers
             elif "hődíj" in megn_low and me_low in ("gj", "mj"):
