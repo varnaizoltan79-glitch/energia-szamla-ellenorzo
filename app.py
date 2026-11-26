@@ -539,7 +539,7 @@ def _feldolgoz_mvm_pdf(dok, szoveg, adat):
                 esz_tetelek.append({"Megnevezés": nev, "Mennyiség": menny, "Mértékegység": me, "Nettó egységár": ar, "ÁFA (%)": afa})
 
         if not esz_tetelek:
-            resz_blokk = szoveg.split("ÁFA összesítő")[0]
+            resz_blokk = next(iter(szoveg.split("ÁFA összesítő")))
             esz_lazabb = re.compile(
                 rf"([A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű\"* .()-]{{6,60}})\s+\d{{4}}\.\d{{2}}\.\d{{2}}\s*[-–]\s*\d{{4}}\.\d{{2}}\.\d{{2}}\s+({egyes_szam})\s+(kWh|hó|kW|db)\s+({egyes_szam})\s*Ft\s*/\s*(?:kWh|hó|kW|db)\s+({egyes_szam})\s+(27|5|18|0|AHK)"
             )
