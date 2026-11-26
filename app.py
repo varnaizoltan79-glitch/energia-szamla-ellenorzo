@@ -1889,7 +1889,7 @@ def mutat_szamla_rogzites(user_id):
             me_nyers = str(sor.get("Mértékegység") or "").strip()
             me_low = me_nyers.lower()
             menny_f = float(menny_d)
-                if ("energiadíj" in megn_low or "energia díj" in megn_low or "áramdíj" in megn_low or "földgáz" in megn_low or "gázdíj" in megn_low or "mennyiségi eltérés" in megn_low or "árszabás ára" in megn_low) and me_low in ("kwh", "m3", "m³", "mj", "gj"):
+            if ("energiadíj" in megn_low or "energia díj" in megn_low or "áramdíj" in megn_low or "földgáz" in megn_low or "gázdíj" in megn_low or "mennyiségi eltérés" in megn_low or "árszabás ára" in megn_low) and me_low in ("kwh", "m3", "m³", "mj", "gj"):
                 ossz_fogy += menny_f
                 fogy_me = "m3" if me_low in ("m3", "m³") else me_nyers
             elif "hődíj" in megn_low and me_low in ("gj", "mj"):
