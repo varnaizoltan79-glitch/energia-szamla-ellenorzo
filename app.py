@@ -137,6 +137,13 @@ def _vizszintes_sorok(oldal):
         sorok.append("".join(sor_reszek))
     return sorok
 
+def _gaz_szamla_e(szoveg):
+    if re.search(r"\b39N[A-Z0-9]{10,}\b", szoveg):
+        return True
+    if re.search(r"\bHU\d{6}[-A-Z0-9]{10,}", szoveg):
+        return False
+    return "földgáz" in szoveg.lower() and "villamos energia" not in szoveg.lower()
+
 def _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat):
     adat["szolgaltato_kulcs"] = "ALTEO"
     m_pod = re.search(r"(?:POD\s*:?\s*)?(39N[A-Z0-9]{10,})", szoveg, re.I)
@@ -232,7 +239,7 @@ def _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat):
     return adat
 
 def _feldolgoz_alteo_pdf(dok, szoveg, adat):
-    if "földgáz" in szoveg.lower() or re.search(r"\b39N[A-Z0-9]{10,}\b", szoveg):
+    if _gaz_szamla_e(szoveg):
         return _feldolgoz_alteo_gaz_pdf(dok, szoveg, adat)
     adat["szolgaltato_kulcs"] = "ALTEO"
     osszes_sor = list()
@@ -474,7 +481,7 @@ def _feldolgoz_mvm_pod_blokk(sorok, alap_tol, alap_ig, alap_brutto):
     return {"pod": pod, "tol": pod_tol, "ig": pod_ig, "brutto": pod_brutto, "tetelek_df": tetelek_df}
 
 def _feldolgoz_mvm_pdf(dok, szoveg, adat):
-    if "földgáz" in szoveg.lower() or re.search(r"\b39N[A-Z0-9]{10,}\b", szoveg):
+    if _gaz_szamla_e(szoveg):
         return _feldolgoz_mvm_gaz_pdf(dok, szoveg, adat)
     adat["szolgaltato_kulcs"] = "MVM"
     osszes_sor = list()
