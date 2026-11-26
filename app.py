@@ -731,7 +731,7 @@ def _feldolgoz_vizmu_pdf(dok, szoveg, adat):
             if not tiszta_sor:
                 continue
             utolso_nev_low = talalatok[-1]["Megnevezés"].lower() if talalatok else ""
-            elozo_tetel_folytatas = bool(talalatok) and not elozo_nev and (tiszta_sor[0].islower() or utolso_nev_low.endswith(("vagy", "mért", "arányos", "elszámolt", "vízmérőn"))
+            elozo_tetel_folytatas = bool(talalatok) and not elozo_nev and (tiszta_sor[0].islower() or utolso_nev_low.endswith(("vagy", "mért", "arányos", "elszámolt", "vízmérőn")))
             if elozo_tetel_folytatas:
                 talalatok[-1]["Megnevezés"] = f"{talalatok[-1]['Megnevezés']} {tiszta_sor}".strip()
                 continue
