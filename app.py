@@ -86,6 +86,7 @@ def mutat_pdf_ablak(pdf_utvonal, szamlaszam):
 def _normalizal(szov):
     szov = re.sub(r"[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]", "-", szov)
     szov = re.sub(r"[\u00ad\u200b-\u200d\u2060\ufeff]", "", szov)
+    szov = re.sub(r"(\d{4}\.\d{2}\.\d{2})(?=\d{4}\.\d{2}\.\d{2})", r"\1-", szov)
     return szov.replace("\xa0", " ")
 
 def _hu_szam(szoveg):
