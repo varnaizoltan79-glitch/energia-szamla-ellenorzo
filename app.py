@@ -1044,7 +1044,8 @@ def _feldolgoz_tavho_pdf(dok, szoveg, adat):
 
 
 
-def feldolgoz_szamla_pdf(pdf_bytes):
+def feldolgoz_pdf(fajl):
+    pdf_bytes = fajl.getvalue() if hasattr(fajl, "getvalue") else fajl
     dok = fitz.open(stream=pdf_bytes, filetype="pdf")
     szoveg = "\n".join(oldal.get_text("text") for oldal in dok)
     szoveg_low = szoveg.lower()
@@ -1070,8 +1071,9 @@ def feldolgoz_szamla_pdf(pdf_bytes):
     elif any(k in szoveg_low for k in ("vízmű", "víziközmű", "tiszamenti", "nyírségvíz", "drv zrt", "érv zrt", "érv. zrt", "11265832", "11069186", "11492809", "11226002")):
         return _feldolgoz_vizmu_pdf(dok, szoveg, adat)
     elif any(k in szoveg_low for k in ("e.on", "eon", "opus titász", "titász", "mvm démász", "elmű", "émász")):
-        if "_feldolgoz_eon_pdf" in globals():
-            return _feldolgoz_eon_pdf(dok, szoveg, adat)
+        for fn_nev in ("_feldolgoz_eon_pdf", "_feldolgoz_opus_pdf", "_feldolgoz_titasz_pdf"):
+            if fn_nev in globals():
+                return globals()[fn_nev](dok, szoveg, adat)
     return _feldolgoz_mvm_pdf(dok, szoveg, adat)
 
 
