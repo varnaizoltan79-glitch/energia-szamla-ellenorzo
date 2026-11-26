@@ -1964,7 +1964,7 @@ def mutat_szamla_rogzites(user_id):
         bruttos.append(ft_szoveg(vegso_brutto))
         df_ki["Nettó összeg (Ft)"] = nettos
         df_ki["Bruttó összeg (Ft)"] = bruttos
-        oszlop_sorrend = ["Megnevezés", "Mennyiség", "Mértékegység", "Nettó egységár", "ÁFA (%)", "Nettó összeg (Ft)", "Bruttó összeg (Ft)"]
+        oszlop_sorrend = ["Megnevezés", "Mennyiség", "Mértékegység", "Nettó egységár", "Nettó összeg (Ft)", "ÁFA (%)", "Bruttó összeg (Ft)"]
         return df_ki[oszlop_sorrend]
 
     df_state_kulcs = f"tetel_tabla_{form_kulcs}"
