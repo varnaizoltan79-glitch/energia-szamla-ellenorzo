@@ -1837,7 +1837,7 @@ def mutat_szamla_rogzites(user_id):
         kiv_pod = pod_cimkek[val_pod_cimke]
         kiv_pod_info = pod_adatok[kiv_pod]
     form_kulcs = f"{f_id}_{kiv_pod}" if kiv_pod else f_id
-    hely_opciok = {f"{h['nev']} ({h['pod']}) [{h['jog']}]": int(h["id"]) for h in helyek}
+    hely_opciok = {str(h["pod"]): int(h["id"]) for h in helyek}
     alap_idx = next((i for i, lbl in enumerate(hely_opciok.keys()) if kiv_pod and kiv_pod in lbl), 0)
     st.subheader("2. Számla alapadatok")
     c1, c2, c3 = st.columns(3)
